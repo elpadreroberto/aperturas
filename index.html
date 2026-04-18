@@ -1,890 +1,912 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Volume2, VolumeX, BookOpen, ChevronDown, ChevronUp, Play, RefreshCw, ArrowUpDown, Undo2, StepForward } from 'lucide-react';
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajedrez Musical</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Babel para compilar React/JSX en el navegador -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-900 text-slate-200 font-sans">
+    <div id="root"></div>
 
-// Mapeo de frecuencias para la escala (A4 a A5)
-const FRECUENCIAS = {
-  a: 440.00, b: 493.88, c: 523.25, d: 587.33, e: 659.25, f: 698.46, g: 783.99, h: 880.00,
-  '1': 440.00, '2': 493.88, '3': 523.25, '4': 587.33, '5': 659.25, '6': 698.46, '7': 783.99, '8': 880.00
-};
+    <script type="text/babel" data-type="module">
+        import React, { useState, useRef, useEffect } from 'https://esm.sh/react@18.2.0';
+        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+        import { Volume2, VolumeX, BookOpen, ChevronDown, ChevronUp, Play, RefreshCw, ArrowUpDown, Undo2, StepForward } from 'https://esm.sh/lucide-react@0.292.0';
 
-// Nombres de las notas para mostrar en la interfaz
-const NOMBRES_NOTAS = {
-  a: 'La', b: 'Si', c: 'Do', d: 'Re', e: 'Mi', f: 'Fa', g: 'Sol', h: 'La (8va)',
-  '1': 'La', '2': 'Si', '3': 'Do', '4': 'Re', '5': 'Mi', '6': 'Fa', '7': 'Sol', '8': 'La (8va)'
-};
+        // Mapeo de frecuencias para la escala (A4 a A5)
+        const FRECUENCIAS = {
+          a: 440.00, b: 493.88, c: 523.25, d: 587.33, e: 659.25, f: 698.46, g: 783.99, h: 880.00,
+          '1': 440.00, '2': 493.88, '3': 523.25, '4': 587.33, '5': 659.25, '6': 698.46, '7': 783.99, '8': 880.00
+        };
 
-// Imágenes de piezas de Wikipedia (Cburnett)
-const PIECES_WIKIPEDIA = {
-  'w': {
-    'k': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
-    'q': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
-    'r': 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
-    'b': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
-    'n': 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
-    'p': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg'
-  },
-  'b': {
-    'k': 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
-    'q': 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
-    'r': 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
-    'b': 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
-    'n': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
-    'p': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg'
-  }
-};
+        // Nombres de las notas para mostrar en la interfaz
+        const NOMBRES_NOTAS = {
+          a: 'La', b: 'Si', c: 'Do', d: 'Re', e: 'Mi', f: 'Fa', g: 'Sol', h: 'La (8va)',
+          '1': 'La', '2': 'Si', '3': 'Do', '4': 'Re', '5': 'Mi', '6': 'Fa', '7': 'Sol', '8': 'La (8va)'
+        };
 
-const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'];
-
-const OPENINGS_DB = [
-  {
-    id: 'escocesa',
-    category: 'abierta',
-    name: 'Apertura Escocesa',
-    movesDisplay: ["1. e4 e5", "2. Nf3 Nc6", "3. d4 exd4", "4. Nxd4 Nf6", "5. Nc3 Bb4"],
-    movesEngine: ["e4", "e5", "Nf3", "Nc6", "d4", "exd4", "Nxd4", "Nf6", "Nc3", "Bb4"],
-    comments: [
-      "Control del centro y liberación de piezas.",
-      "Respuesta clásica, igualando el espacio central.",
-      "Desarrollo con amenaza sobre e5.",
-      "Defiende e5 y desarrolla un caballo.",
-      "La Escocesa. Las blancas abren el centro de inmediato.",
-      "Las negras aceptan el cambio, la única jugada buena.",
-      "Centraliza el caballo y recupera el material.",
-      "Desarrolla el caballo y ataca el peón de e4.",
-      "Defiende e4 de forma natural con el caballo.",
-      "Clava el caballo de c3, renovando la amenaza sobre e4."
-    ]
-  },
-  {
-    id: 'gambito_rey',
-    category: 'abierta',
-    name: 'Gambito de Rey',
-    movesDisplay: ["1. e4 e5", "2. f4 exf4", "3. Nf3 g5", "4. Bc4 Bg7", "5. O-O d6"],
-    movesEngine: ["e4", "e5", "f4", "exf4", "Nf3", "g5", "Bc4", "Bg7", "O-O", "d6"],
-    comments: [
-      "Las blancas ocupan el centro.",
-      "Las negras reclaman su parte del centro.",
-      "El Gambito de Rey. Sacrifica un peón para desviar el centro negro y abrir la columna f.",
-      "Acepta el gambito. Las negras ganan un peón pero ceden el centro.",
-      "Evita el molesto jaque de dama en h4 y desarrolla el caballo.",
-      "Las negras defienden férreamente su peón extra de f4.",
-      "Apunta al punto débil f7 y prepara el enroque.",
-      "Desarrollo fianchetto para proteger el rey y el flanco.",
-      "Asegura el rey blanco y pone la torre en la columna semiabierta.",
-      "Abre paso al alfil de dama y controla el centro."
-    ]
-  },
-  {
-    id: 'cuatro_caballos',
-    category: 'abierta',
-    name: 'Apertura 4 Caballos',
-    movesDisplay: ["1. e4 e5", "2. Nf3 Nc6", "3. Nc3 Nf6", "4. Bb5 Bb4", "5. O-O O-O"],
-    movesEngine: ["e4", "e5", "Nf3", "Nc6", "Nc3", "Nf6", "Bb5", "Bb4", "O-O", "O-O"],
-    comments: [
-      "Apertura clásica de peón de rey.",
-      "Respuesta sólida y simétrica.",
-      "Desarrolla el caballo atacando el centro.",
-      "Defiende y desarrolla.",
-      "Apertura de los Tres Caballos. Control central metódico.",
-      "Completa el desarrollo de los cuatro caballos. Máxima simetría.",
-      "Variante Española de los 4 Caballos. Presiona el caballo de c6.",
-      "Copia la idea blanca, presionando el caballo de c3.",
-      "Pone el rey a salvo antes de iniciar hostilidades.",
-      "Las negras también enrocan. Posición de equilibrio clásico."
-    ]
-  },
-  {
-    id: 'petrov',
-    category: 'abierta',
-    name: 'Defensa Petrov',
-    movesDisplay: ["1. e4 e5", "2. Nf3 Nf6", "3. Nxe5 d6", "4. Nf3 Nxe4", "5. d4 d5"],
-    movesEngine: ["e4", "e5", "Nf3", "Nf6", "Nxe5", "d6", "Nf3", "Nxe4", "d4", "d5"],
-    comments: [
-      "Las blancas abren reclamando el centro.",
-      "Las negras responden simétricamente.",
-      "Desarrollo atacando el peón e5.",
-      "La Defensa Petrov (o Rusa). Contraataca e4 en lugar de defender.",
-      "Las blancas ganan un peón temporalmente.",
-      "Expulsa al caballo antes de recuperar el peón.",
-      "El caballo retrocede a una casilla segura.",
-      "Las negras recuperan el peón y centralizan su caballo.",
-      "Ocupa el centro y prepara el desarrollo.",
-      "Sostiene el poderoso caballo en e4 y asegura espacio."
-    ]
-  },
-  {
-    id: 'caro_kann',
-    category: 'semiabierta',
-    name: 'Defensa Caro-Kann',
-    movesDisplay: ["1. e4 c6", "2. d4 d5", "3. Nc3 dxe4", "4. Nxe4 Bf5", "5. Ng3 Bg6"],
-    movesEngine: ["e4", "c6", "d4", "d5", "Nc3", "dxe4", "Nxe4", "Bf5", "Ng3", "Bg6"],
-    comments: [
-      "Ocupación central y apertura de líneas.",
-      "La Caro-Kann. Prepara d5 sin bloquear el alfil de casillas claras.",
-      "Gana espacio en el centro apoyando d4.",
-      "Desafía inmediatamente el centro de las blancas.",
-      "Desarrolla el caballo y defiende e4.",
-      "Captura en el centro. Las negras ceden el espacio temporalmente.",
-      "Recupera el peón y centraliza el caballo.",
-      "Desarrolla el alfil de dama antes de jugar e6.",
-      "Gana un tiempo atacando el alfil y lo fuerza a moverse.",
-      "El alfil se retira a una diagonal segura manteniendo actividad."
-    ]
-  },
-  {
-    id: 'pirc',
-    category: 'semiabierta',
-    name: 'Defensa Pirc',
-    movesDisplay: ["1. e4 d6", "2. d4 Nf6", "3. Nc3 g6", "4. Nf3 Bg7", "5. Be2 O-O"],
-    movesEngine: ["e4", "d6", "d4", "Nf6", "Nc3", "g6", "Nf3", "Bg7", "Be2", "O-O"],
-    comments: [
-      "Toma el centro con el peón de rey.",
-      "La Defensa Pirc. Un enfoque hipermoderno flexible.",
-      "Las blancas establecen el centro ideal de peones.",
-      "Ataca e4 e impide un desarrollo tranquilo.",
-      "Defiende e4 y desarrolla el caballo.",
-      "Prepara el fianchetto del alfil de rey.",
-      "Desarrollo clásico del caballo de rey.",
-      "Completa el fianchetto, controlando la gran diagonal oscura.",
-      "Desarrollo tranquilo, preparando el enroque.",
-      "Las negras enrocan. Una posición sólida lista para contraatacar."
-    ]
-  },
-  {
-    id: 'alekhine',
-    category: 'semiabierta',
-    name: 'Defensa Alekhine',
-    movesDisplay: ["1. e4 Nf6", "2. e5 Nd5", "3. d4 d6", "4. c4 Nb6", "5. exd6 cxd6"],
-    movesEngine: ["e4", "Nf6", "e5", "Nd5", "d4", "d6", "c4", "Nb6", "exd6", "cxd6"],
-    comments: [
-      "Las blancas toman control del centro.",
-      "Defensa Alekhine. Provoca el avance de los peones blancos para atacarlos después.",
-      "Acepta el reto, ganando espacio y atacando el caballo.",
-      "El caballo se reubica en una casilla central segura.",
-      "Las blancas refuerzan su ventaja de espacio central.",
-      "Ataca la cadena de peones blancos desde la base.",
-      "Expulsa al caballo de d5, ganando aún más espacio.",
-      "El caballo se retira a b6, apuntando a c4 y d5.",
-      "Cambio en el centro para definir la estructura de peones.",
-      "Captura simétrica. Posición asimétrica con chances para ambos."
-    ]
-  },
-  {
-    id: 'ruy_lopez',
-    category: 'abierta',
-    name: 'Apertura Ruy López',
-    movesDisplay: ["1. e4 e5", "2. Nf3 Nc6", "3. Bb5 a6", "4. Ba4 Nf6", "5. O-O Be7"],
-    movesEngine: ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O", "Be7"],
-    comments: [
-      "Ocupa el centro y abre vías de desarrollo para el alfil y la dama.",
-      "Responde simétricamente, reclamando control central y evitando d4.",
-      "Desarrollo natural. Ataca el peón central de e5 y prepara el enroque.",
-      "Defiende el peón, desarrolla el caballo hacia el centro y controla d4.",
-      "Define la apertura. Presiona al defensor de e5 y crea tensión estratégica.",
-      "Defensa Morphy. Interroga al alfil: ¿capturar en c6 o retirarse?",
-      "El alfil se retira manteniendo la presión sobre el caballo defensor.",
-      "Desarrollo clásico. Ataca e4 y prepara el enroque corto de las negras.",
-      "Prioridad: Seguridad del rey. Las blancas completan su desarrollo inicial.",
-      "Defensa Cerrada. Jugada flexible que prepara el enroque y defiende d6."
-    ]
-  },
-  {
-    id: 'italiana',
-    category: 'abierta',
-    name: 'Apertura Italiana',
-    movesDisplay: ["1. e4 e5", "2. Nf3 Nc6", "3. Bc4 Bc5", "4. c3 Nf6", "5. d3 d6"],
-    movesEngine: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "c3", "Nf6", "d3", "d6"],
-    comments: [
-      "Controla el centro y libera la dama y el alfil de rey.",
-      "Respuesta clásica para disputar el centro y permitir el desarrollo.",
-      "Desarrolla una pieza menor y presiona el peón de e5 inmediatamente.",
-      "Defiende e5 y prepara el desarrollo del flanco de dama.",
-      "La Italiana. Apunta al punto débil f7 antes del enroque negro.",
-      "Giuoco Piano. Desarrolla el alfil a una posición activa controlando d4.",
-      "Prepara el empuje central d4 para crear un centro de peones fuerte.",
-      "Contraataca el peón de e4 y desarrolla el caballo para enrocar.",
-      "Defensa sólida. Protege e4 y libera el alfil de dama.",
-      "Sostiene el centro y abre paso al alfil de casillas claras."
-    ]
-  },
-  {
-    id: 'siciliana',
-    category: 'semiabierta',
-    name: 'Defensa Siciliana',
-    movesDisplay: ["1. e4 c5", "2. Nf3 d6", "3. d4 cxd4", "4. Nxd4 Nf6", "5. Nc3 a6"],
-    movesEngine: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "a6"],
-    comments: [
-      "Inicia la lucha por el centro con la jugada más ambiciosa.",
-      "La Siciliana. Crea una lucha asimétrica controlando d4 con un peón lateral.",
-      "Prepara d4 y desarrolla el caballo a su casilla más natural.",
-      "Controla e5 y mantiene flexibilidad en el desarrollo.",
-      "La apertura de la columna d. Abre el juego para las piezas blancas.",
-      "Las negras cambian su peón lateral por uno central (columna c abierta).",
-      "Centralización del caballo. Una posición muy activa y peligrosa.",
-      "Desarrolla atacando e4, obligando a las blancas a defenderlo.",
-      "Defensa natural de e4 mientras se desarrolla otra pieza menor.",
-      "Variante Najdorf. Controla b5 y prepara expansión en el flanco de dama."
-    ]
-  },
-  {
-    id: 'gambito_reina',
-    category: 'cerrada',
-    name: 'Gambito de Reina',
-    movesDisplay: ["1. d4 d5", "2. c4 e6", "3. Nc3 Nf6", "4. Bg5 Be7", "5. e3 O-O"],
-    movesEngine: ["d4", "d5", "c4", "e6", "Nc3", "Nf6", "Bg5", "Be7", "e3", "O-O"],
-    comments: [
-      "Ocupa el centro y prepara el desarrollo del alfil de dama.",
-      "Responde reclamando espacio central e impidiendo e4 inmediato.",
-      "El Gambito de Reina. Desafía d5 para ganar control del centro.",
-      "Gambito de Reina Reclinado. Defiende d5 de forma muy sólida.",
-      "Presiona d5 y desarrolla una pieza menor hacia el centro.",
-      "Desarrolla el caballo, controla e4 y protege el peón de d5.",
-      "Clava el caballo de f6, aumentando la presión sobre d5.",
-      "Rompe la clavada y prepara el enroque corto de las negras.",
-      "Refuerza d4 y abre la diagonal para el alfil de casillas blancas.",
-      "Asegura el rey antes de que las blancas abran el centro del tablero."
-    ]
-  },
-  {
-    id: 'francesa',
-    category: 'semiabierta',
-    name: 'Defensa Francesa',
-    movesDisplay: ["1. e4 e6", "2. d4 d5", "3. Nc3 Nf6", "4. Bg5 Be7", "5. e5 Nfd7"],
-    movesEngine: ["e4", "e6", "d4", "d5", "Nc3", "Nf6", "Bg5", "Be7", "e5", "Nfd7"],
-    comments: [
-      "Clásico avance central, controlando casillas clave.",
-      "La Francesa. Prepara d5 protegiendo el rey, aunque bloquea a su alfil.",
-      "Las blancas ocupan el centro ideal con sus dos peones.",
-      "Desafía directamente el centro blanco, forzando una decisión en e4.",
-      "Variante principal. Desarrolla y defiende e4 de forma agresiva.",
-      "Presiona e4 y desarrolla una pieza menor hacia el centro.",
-      "Clava al caballo atacante y prepara el avance e5 para ganar espacio.",
-      "Alivia la presión de la clavada y prepara el enroque corto.",
-      "Gana espacio central y obliga al caballo de f6 a retirarse.",
-      "El caballo se retira a una casilla sólida, preparando el contraataque c5."
-    ]
-  },
-  {
-    id: 'india_rey',
-    category: 'semicerrada',
-    name: 'Defensa India de Rey',
-    movesDisplay: ["1. d4 Nf6", "2. c4 g6", "3. Nc3 Bg7", "4. e4 d6", "5. Nf3 O-O"],
-    movesEngine: ["d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6", "Nf3", "O-O"],
-    comments: [
-      "Las blancas ocupan el centro con el peón de dama.",
-      "Respuesta hipermoderna: controla e4 y d5 con la pieza.",
-      "Las blancas preparan un centro de peones clásico.",
-      "Las negras preparan el fianchetto del alfil de rey.",
-      "Desarrollo central. Controla d5 y e4.",
-      "El alfil ocupa la gran diagonal, presionando el centro blanco.",
-      "Las blancas establecen el 'Centro Clásico' ideal.",
-      "Las negras limitan el avance de e4 y preparan el contrajuego central.",
-      "Desarrollo natural. Refuerza e5 y d4.",
-      "Las negras ponen a su rey a salvo y completan la primera fase."
-    ]
-  },
-  {
-    id: 'nimzoindia',
-    category: 'semicerrada',
-    name: 'Defensa Nimzoindia',
-    movesDisplay: ["1. d4 Nf6", "2. c4 e6", "3. Nc3 Bb4", "4. e3 O-O", "5. Bd3 d5"],
-    movesEngine: ["d4", "Nf6", "c4", "e6", "Nc3", "Bb4", "e3", "O-O", "Bd3", "d5"],
-    comments: [
-      "Inicio sólido ocupando el centro con el peón de dama.",
-      "Desarrollo flexible que impide el avance e4 inmediato.",
-      "Control del flanco de dama y preparación del centro.",
-      "Abre el camino al alfil de rey y mantiene opciones centrales.",
-      "Desarrollo del caballo presionando d5 y e4.",
-      "La Nimzoindia. Clava el caballo y controla indirectamente el centro.",
-      "Variante Rubinstein. Defensa sólida de d4 y preparación del desarrollo.",
-      "Prioridad a la seguridad del rey antes de la lucha central.",
-      "Desarrollo activo del alfil apuntando al flanco de rey.",
-      "Contragolpe central clásico para disputar el dominio blanco."
-    ]
-  },
-  {
-    id: 'sistema_londres',
-    category: 'cerrada',
-    name: 'Sistema Londres',
-    movesDisplay: ["1. d4 d5", "2. Nf3 Nf6", "3. Bf4 c5", "4. e3 Nc6", "5. c3 e6"],
-    movesEngine: ["d4", "d5", "Nf3", "Nf6", "Bf4", "c5", "e3", "Nc6", "c3", "e6"],
-    comments: [
-      "Apertura del peón de dama, controlando el centro.",
-      "Respuesta simétrica y sólida de las negras.",
-      "Desarrollo del caballo, apoyando d4 y e5.",
-      "Las negras desarrollan su caballo y preparan la lucha central.",
-      "La jugada característica del Londres. Desarrolla el alfil fuera de la cadena de peones.",
-      "Las negras golpean inmediatamente el centro atacando d4.",
-      "Sostiene el centro sólidamente y prepara el desarrollo del flanco de rey.",
-      "Aumenta la presión sobre d4 y desarrolla otra pieza menor.",
-      "Refuerza la estructura piramidal de peones blancos en el centro.",
-      "Desarrollo sólido que prepara la salida del alfil de casillas oscuras."
-    ]
-  },
-  {
-    id: 'colle',
-    category: 'cerrada',
-    name: 'Sistema Colle',
-    movesDisplay: ["1. d4 d5", "2. Nf3 Nf6", "3. e3 e6", "4. Bd3 c5", "5. c3 Nc6"],
-    movesEngine: ["d4", "d5", "Nf3", "Nf6", "e3", "e6", "Bd3", "c5", "c3", "Nc6"],
-    comments: [
-      "Apertura del peón de dama.",
-      "Las negras controlan el centro de forma clásica.",
-      "Desarrollo flexible apuntando a e5.",
-      "Desarrollo simétrico impidiendo e4.",
-      "Sólido, preparando el desarrollo del alfil de casillas claras.",
-      "Cierra el centro momentáneamente y prepara el enroque.",
-      "El alfil se sitúa en una diagonal activa (apuntando a h7).",
-      "Golpea el centro inmediatamente, el antídoto típico.",
-      "Apoya d4, consolidando la cuña central blanca.",
-      "Aumenta la presión sobre d4 y desarrolla otra pieza."
-    ]
-  },
-  {
-    id: 'catalana',
-    category: 'semicerrada',
-    name: 'Apertura Catalana',
-    movesDisplay: ["1. d4 Nf6", "2. c4 e6", "3. g3 d5", "4. Bg2 Be7", "5. Nf3 O-O"],
-    movesEngine: ["d4", "Nf6", "c4", "e6", "g3", "d5", "Bg2", "Be7", "Nf3", "O-O"],
-    comments: [
-      "Las blancas inician controlando el centro con el peón de dama.",
-      "Evita e4 inmediato y mantiene flexibilidad.",
-      "Gana espacio en el flanco de dama y presiona d5.",
-      "Prepara el desarrollo del alfil o un golpe central con d5.",
-      "Prepara el fianchetto, la marca registrada de la Catalana.",
-      "Las negras golpean el centro y transponen a un esquema de Gambito de Reina.",
-      "El alfil se ubica en la gran diagonal, ejerciendo presión a largo plazo.",
-      "Desarrollo conservador, preparando el enroque y defendiendo.",
-      "Desarrollo natural del caballo, controlando el centro.",
-      "Las negras aseguran su rey antes de resolver la tensión central."
-    ]
-  },
-  {
-    id: 'gambito_reina_aceptado',
-    category: 'cerrada',
-    name: 'Gambito de Reina Aceptado',
-    movesDisplay: ["1. d4 d5", "2. c4 dxc4", "3. Nf3 Nf6", "4. e3 e6", "5. Bxc4 c5"],
-    movesEngine: ["d4", "d5", "c4", "dxc4", "Nf3", "Nf6", "e3", "e6", "Bxc4", "c5"],
-    comments: [
-      "Apertura estándar del peón de dama.",
-      "Respuesta simétrica, controlando casillas centrales.",
-      "El Gambito de Reina. Las blancas ofrecen un peón lateral por control central.",
-      "Las negras aceptan el gambito, desviando un peón blanco del centro.",
-      "Desarrolla el caballo y previene el avance liberador e5 de las negras.",
-      "Desarrollo natural, controlando e4 y d5.",
-      "Prepara la recuperación del peón y abre paso al alfil de rey.",
-      "Defiende d5 sólidamente y prepara el desarrollo del alfil de rey.",
-      "Las blancas recuperan el peón y desarrollan una pieza activa.",
-      "Contragolpe típico: las negras atacan el centro blanco inmediatamente."
-    ]
-  },
-  {
-    id: 'eslava',
-    category: 'cerrada',
-    name: 'Defensa Eslava',
-    movesDisplay: ["1. d4 d5", "2. c4 c6", "3. Nf3 Nf6", "4. Nc3 dxc4", "5. a4 Bf5"],
-    movesEngine: ["d4", "d5", "c4", "c6", "Nf3", "Nf6", "Nc3", "dxc4", "a4", "Bf5"],
-    comments: [
-      "Ocupación central con el peón de dama.",
-      "Respuesta simétrica, controlando el centro.",
-      "El Gambito de Reina. Presiona el centro.",
-      "La Defensa Eslava. Apoya d5 sin bloquear el alfil de casillas claras.",
-      "Desarrolla el caballo y controla e5.",
-      "Desarrollo natural, manteniendo la flexibilidad.",
-      "Aumenta la presión sobre el centro negro.",
-      "Las negras capturan en c4, dispuestas a ganar actividad o defender el peón.",
-      "Previene b5, impidiendo que las negras defiendan el peón extra fácilmente.",
-      "El alfil se desarrolla activamente antes de que las negras jueguen e6."
-    ]
-  },
-  {
-    id: 'grunfeld',
-    category: 'semicerrada',
-    name: 'Defensa Grünfeld',
-    movesDisplay: ["1. d4 Nf6", "2. c4 g6", "3. Nc3 d5", "4. cxd5 Nxd5", "5. e4 Nxc3"],
-    movesEngine: ["d4", "Nf6", "c4", "g6", "Nc3", "d5", "cxd5", "Nxd5", "e4", "Nxc3"],
-    comments: [
-      "Ocupación central típica con el peón de dama.",
-      "Desarrollo flexible y control de casillas clave.",
-      "Gana espacio y apoya un futuro d5 o e4.",
-      "Prepara el fianchetto del alfil de rey.",
-      "Desarrolla el caballo y consolida el control de d5 y e4.",
-      "¡La Grünfeld! Golpea el centro inmediatamente.",
-      "Las blancas aceptan el reto y cambian peones en el centro.",
-      "El caballo recaptura y se centraliza temporalmente.",
-      "Toma el centro por completo, forzando al caballo a moverse.",
-      "Las negras cambian en c3 para desequilibrar la estructura de peones blancos."
-    ]
-  },
-  {
-    id: 'mexicana',
-    category: 'semicerrada',
-    name: 'Defensa Mexicana',
-    movesDisplay: ["1. d4 Nf6", "2. c4 Nc6", "3. Nf3 e6", "4. a3 d6", "5. Nc3 g6"],
-    movesEngine: ["d4", "Nf6", "c4", "Nc6", "Nf3", "e6", "a3", "d6", "Nc3", "g6"],
-    comments: [
-      "Ocupa el centro y prepara el desarrollo.",
-      "Respuesta flexible, apuntando a d5 y e4.",
-      "Expansión en el flanco de dama con el peón c.",
-      "¡La Defensa Mexicana o Tango! Desarrolla el caballo bloqueando su propio peón c.",
-      "Desarrollo natural y sólido del caballo de rey.",
-      "Abre líneas para el alfil y prepara un esquema restringido pero dinámico.",
-      "Jugada profiláctica, evita que el alfil negro salte a b4 de forma molesta.",
-      "Defiende y prepara una estructura de peones más cerrada.",
-      "Desarrolla el caballo de dama, aumentando la presión.",
-      "Prepara el fianchetto para tener perspectivas a largo plazo en la gran diagonal."
-    ]
-  },
-  {
-    id: 'benoni',
-    category: 'semicerrada',
-    name: 'Defensa Benoni',
-    movesDisplay: ["1. d4 Nf6", "2. c4 c5", "3. d5 e6", "4. Nc3 exd5", "5. cxd5 d6"],
-    movesEngine: ["d4", "Nf6", "c4", "c5", "d5", "e6", "Nc3", "exd5", "cxd5", "d6"],
-    comments: [
-      "Las blancas toman el centro con el peón d.",
-      "Evita e4 inmediato, controlando el centro con el caballo.",
-      "Gana espacio en el flanco de dama y apoya el centro.",
-      "¡El golpe Benoni! Ataca d4 directamente, buscando desequilibrio.",
-      "Avanza el peón, ganando espacio y cerrando el centro temporalmente.",
-      "Presiona d5, forzando una decisión sobre la estructura central.",
-      "Desarrolla el caballo y mantiene el control central de forma natural.",
-      "Cambio central, creando una mayoría asimétrica de peones para las blancas.",
-      "Las blancas recapturan, consolidando su ventaja de espacio en el centro.",
-      "Controla e5 y c5, preparando el desarrollo asimétrico del flanco de rey."
-    ]
-  },
-  {
-    id: 'benko',
-    category: 'semicerrada',
-    name: 'Gambito Benko',
-    movesDisplay: ["1. d4 Nf6", "2. c4 c5", "3. d5 b5", "4. cxb5 a6", "5. bxa6 g6"],
-    movesEngine: ["d4", "Nf6", "c4", "c5", "d5", "b5", "cxb5", "a6", "bxa6", "g6"],
-    comments: [
-      "Control central clásico con el peón de dama.",
-      "Respuesta flexible que mantiene opciones hipermodernas.",
-      "Las blancas buscan dominar el espacio central tempranamente.",
-      "Al igual que en la Benoni, las negras golpean fuertemente en d4.",
-      "Las blancas avanzan el peón ganando mucho espacio en el centro.",
-      "¡El Gambito Benko! (o Volga). Sacrifica un peón lateral para ganar iniciativa.",
-      "Acepta el primer peón del gambito para cuestionar la idea negra.",
-      "Ofrece un segundo peón para abrir completamente las columnas a y b.",
-      "Acepta el segundo peón. Las blancas tienen material extra, pero sufren presión.",
-      "Prepara el fianchetto del alfil para ejercer presión paralela al ataque de las torres."
-    ]
-  },
-  {
-    id: 'holandesa',
-    category: 'semicerrada',
-    name: 'Defensa Holandesa',
-    movesDisplay: ["1. d4 f5", "2. g3 Nf6", "3. Bg2 e6", "4. c4 Be7", "5. Nf3 O-O"],
-    movesEngine: ["d4", "f5", "g3", "Nf6", "Bg2", "e6", "c4", "Be7", "Nf3", "O-O"],
-    comments: [
-      "Las blancas toman el centro de manera tradicional.",
-      "¡La Holandesa! Rompe la simetría y controla la casilla e4 fuertemente.",
-      "Prepara el fianchetto del alfil para contrarrestar el control negro.",
-      "Desarrolla el caballo de rey hacia el centro.",
-      "El alfil se sitúa en la gran diagonal, apuntando al flanco de dama.",
-      "Sólida jugada preparatoria, abriendo paso al desarrollo del alfil.",
-      "Las blancas reclaman más espacio en el centro y flanco de dama.",
-      "Desarrollo tranquilo del alfil de rey, apuntando a enrocar rápido.",
-      "Desarrolla el caballo y consolida la posición elástica de las blancas.",
-      "Las negras enrocan rápidamente, asegurando al rey en su agresiva defensa."
-    ]
-  }
-];
-
-export default function App() {
-  const audioCtxRef = useRef(null);
-  const analysisEndRef = useRef(null); 
-  
-  const [casillaActiva, setCasillaActiva] = useState(null);
-  const [notaActual, setNotaActual] = useState('Esperando jugada...'); 
-  
-  const [showAbiertas, setShowAbiertas] = useState(false);
-  const [showSemiabiertas, setShowSemiabiertas] = useState(false);
-  const [showCerradas, setShowCerradas] = useState(false);
-  const [showSemicerradas, setShowSemicerradas] = useState(false);
-
-  const [aperturaSeleccionada, setAperturaSeleccionada] = useState(OPENINGS_DB[0]);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isFlipped, setIsFlipped] = useState(false);
-  const [showTitle, setShowTitle] = useState(true);
-  
-  const [game, setGame] = useState(null);
-  const [selectedSquare, setSelectedSquare] = useState(null);
-  const [boardUpdate, setBoardUpdate] = useState(0);
-
-  useEffect(() => {
-    import('https://esm.sh/chess.js@1.0.0-beta.8').then(({ Chess }) => {
-      setGame(new Chess());
-    }).catch(err => console.error("Error cargando chess.js", err));
-
-    const timer = setTimeout(() => setShowTitle(false), 3000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    if (analysisEndRef.current) {
-      analysisEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [boardUpdate]);
-
-  const initAudio = () => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume();
-    }
-    return audioCtxRef.current;
-  };
-
-  const playTone = (ctx, freq, startTime, duration) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, startTime);
-    gain.gain.setValueAtTime(0, startTime);
-    gain.gain.linearRampToValueAtTime(0.3, startTime + 0.05);
-    gain.gain.setValueAtTime(0.3, startTime + duration - 0.1);
-    gain.gain.linearRampToValueAtTime(0, startTime + duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(startTime);
-    osc.stop(startTime + duration);
-  };
-
-  const reproducirApertura = async () => {
-    if (!game || isPlaying) return;
-    setIsPlaying(true);
-    game.reset();
-    setBoardUpdate(prev => prev + 1);
-    setSelectedSquare(null);
-
-    const ctx = initAudio();
-    const duracion = 0.4;
-
-    for (let moveStr of aperturaSeleccionada.movesEngine) {
-      const move = game.move(moveStr);
-      if (move) {
-        setBoardUpdate(prev => prev + 1);
-        const file = move.to[0];
-        const rank = move.to[1];
-        setCasillaActiva(move.to);
-        setNotaActual(`${aperturaSeleccionada.name}`);
-        const tiempoActual = ctx.currentTime;
-        if (!isMuted) {
-          playTone(ctx, FRECUENCIAS[file], tiempoActual, duracion);
-          playTone(ctx, FRECUENCIAS[rank], tiempoActual + duracion, duracion);
-        }
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
-    }
-    setCasillaActiva(null);
-    setIsPlaying(false);
-  };
-
-  const resetBoard = () => {
-    if (game) {
-      game.reset();
-      setBoardUpdate(prev => prev + 1);
-      setSelectedSquare(null);
-      setCasillaActiva(null);
-      setIsPlaying(false);
-      setNotaActual('Tablero reiniciado');
-    }
-  };
-
-  const undoMove = () => {
-    if (game && !isPlaying) {
-      const move = game.undo();
-      if (move) {
-        setBoardUpdate(prev => prev + 1);
-        setSelectedSquare(null);
-        setCasillaActiva(null);
-        setNotaActual('Deshacer');
-      }
-    }
-  };
-
-  const toggleOrientation = () => setIsFlipped(!isFlipped);
-
-  const stepForward = () => {
-    if (!game || isPlaying) return;
-    const nextMoveIndex = game.history().length;
-    if (nextMoveIndex < aperturaSeleccionada.movesEngine.length) {
-      try {
-        const move = game.move(aperturaSeleccionada.movesEngine[nextMoveIndex]);
-        if (move) {
-          setBoardUpdate(prev => prev + 1);
-          const file = move.to[0];
-          const rank = move.to[1];
-          setCasillaActiva(move.to);
-          setNotaActual(`${aperturaSeleccionada.name}`);
-          const ctx = initAudio();
-          const tiempoActual = ctx.currentTime;
-          const duracion = 0.4;
-          if (!isMuted) {
-            playTone(ctx, FRECUENCIAS[file], tiempoActual, duracion);
-            playTone(ctx, FRECUENCIAS[rank], tiempoActual + duracion, duracion);
+        // Imágenes de piezas de Wikipedia (Cburnett)
+        const PIECES_WIKIPEDIA = {
+          'w': {
+            'k': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
+            'q': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
+            'r': 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+            'b': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
+            'n': 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+            'p': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg'
+          },
+          'b': {
+            'k': 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
+            'q': 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
+            'r': 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+            'b': 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
+            'n': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+            'p': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg'
           }
-          setTimeout(() => setCasillaActiva(null), duracion * 2 * 1000);
-        }
-      } catch (e) {
-        setNotaActual('Variante detectada');
-      }
-    }
-  };
+        };
 
-  const handleSquareClick = (file, rank) => {
-    if (isPlaying) return;
-    const ctx = initAudio();
-    const tiempoActual = ctx.currentTime;
-    const duracion = 0.4;
-    const squareId = `${file}${rank}`;
+        const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+        const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'];
 
-    if (game) {
-      if (selectedSquare) {
-        try {
-          const move = game.move({ from: selectedSquare, to: squareId, promotion: 'q' });
-          if (move) {
+        const OPENINGS_DB = [
+          {
+            id: 'escocesa',
+            category: 'abierta',
+            name: 'Apertura Escocesa',
+            movesDisplay: ["1. e4 e5", "2. Nf3 Nc6", "3. d4 exd4", "4. Nxd4 Nf6", "5. Nc3 Bb4"],
+            movesEngine: ["e4", "e5", "Nf3", "Nc6", "d4", "exd4", "Nxd4", "Nf6", "Nc3", "Bb4"],
+            comments: [
+              "Control del centro y liberación de piezas.",
+              "Respuesta clásica, igualando el espacio central.",
+              "Desarrollo con amenaza sobre e5.",
+              "Defiende e5 y desarrolla un caballo.",
+              "La Escocesa. Las blancas abren el centro de inmediato.",
+              "Las negras aceptan el cambio, la única jugada buena.",
+              "Centraliza el caballo y recupera el material.",
+              "Desarrolla el caballo y ataca el peón de e4.",
+              "Defiende e4 de forma natural con el caballo.",
+              "Clava el caballo de c3, renovando la amenaza sobre e4."
+            ]
+          },
+          {
+            id: 'gambito_rey',
+            category: 'abierta',
+            name: 'Gambito de Rey',
+            movesDisplay: ["1. e4 e5", "2. f4 exf4", "3. Nf3 g5", "4. Bc4 Bg7", "5. O-O d6"],
+            movesEngine: ["e4", "e5", "f4", "exf4", "Nf3", "g5", "Bc4", "Bg7", "O-O", "d6"],
+            comments: [
+              "Las blancas ocupan el centro.",
+              "Las negras reclaman su parte del centro.",
+              "El Gambito de Rey. Sacrifica un peón para desviar el centro negro y abrir la columna f.",
+              "Acepta el gambito. Las negras ganan un peón pero ceden el centro.",
+              "Evita el molesto jaque de dama en h4 y desarrolla el caballo.",
+              "Las negras defienden férreamente su peón extra de f4.",
+              "Apunta al punto débil f7 y prepara el enroque.",
+              "Desarrollo fianchetto para proteger el rey y el flanco.",
+              "Asegura el rey blanco y pone la torre en la columna semiabierta.",
+              "Abre paso al alfil de dama y controla el centro."
+            ]
+          },
+          {
+            id: 'cuatro_caballos',
+            category: 'abierta',
+            name: 'Apertura 4 Caballos',
+            movesDisplay: ["1. e4 e5", "2. Nf3 Nc6", "3. Nc3 Nf6", "4. Bb5 Bb4", "5. O-O O-O"],
+            movesEngine: ["e4", "e5", "Nf3", "Nc6", "Nc3", "Nf6", "Bb5", "Bb4", "O-O", "O-O"],
+            comments: [
+              "Apertura clásica de peón de rey.",
+              "Respuesta sólida y simétrica.",
+              "Desarrolla el caballo atacando el centro.",
+              "Defiende y desarrolla.",
+              "Apertura de los Tres Caballos. Control central metódico.",
+              "Completa el desarrollo de los cuatro caballos. Máxima simetría.",
+              "Variante Española de los 4 Caballos. Presiona el caballo de c6.",
+              "Copia la idea blanca, presionando el caballo de c3.",
+              "Pone el rey a salvo antes de iniciar hostilidades.",
+              "Las negras también enrocan. Posición de equilibrio clásico."
+            ]
+          },
+          {
+            id: 'petrov',
+            category: 'abierta',
+            name: 'Defensa Petrov',
+            movesDisplay: ["1. e4 e5", "2. Nf3 Nf6", "3. Nxe5 d6", "4. Nf3 Nxe4", "5. d4 d5"],
+            movesEngine: ["e4", "e5", "Nf3", "Nf6", "Nxe5", "d6", "Nf3", "Nxe4", "d4", "d5"],
+            comments: [
+              "Las blancas abren reclamando el centro.",
+              "Las negras responden simétricamente.",
+              "Desarrollo atacando el peón e5.",
+              "La Defensa Petrov (o Rusa). Contraataca e4 en lugar de defender.",
+              "Las blancas ganan un peón temporalmente.",
+              "Expulsa al caballo antes de recuperar el peón.",
+              "El caballo retrocede a una casilla segura.",
+              "Las negras recuperan el peón y centralizan su caballo.",
+              "Ocupa el centro y prepara el desarrollo.",
+              "Sostiene el poderoso caballo en e4 y asegura espacio."
+            ]
+          },
+          {
+            id: 'caro_kann',
+            category: 'semiabierta',
+            name: 'Defensa Caro-Kann',
+            movesDisplay: ["1. e4 c6", "2. d4 d5", "3. Nc3 dxe4", "4. Nxe4 Bf5", "5. Ng3 Bg6"],
+            movesEngine: ["e4", "c6", "d4", "d5", "Nc3", "dxe4", "Nxe4", "Bf5", "Ng3", "Bg6"],
+            comments: [
+              "Ocupación central y apertura de líneas.",
+              "La Caro-Kann. Prepara d5 sin bloquear el alfil de casillas claras.",
+              "Gana espacio en el centro apoyando d4.",
+              "Desafía inmediatamente el centro de las blancas.",
+              "Desarrolla el caballo y defiende e4.",
+              "Captura en el centro. Las negras ceden el espacio temporalmente.",
+              "Recupera el peón y centraliza el caballo.",
+              "Desarrolla el alfil de dama antes de jugar e6.",
+              "Gana un tiempo atacando el alfil y lo fuerza a moverse.",
+              "El alfil se retira a una diagonal segura manteniendo actividad."
+            ]
+          },
+          {
+            id: 'pirc',
+            category: 'semiabierta',
+            name: 'Defensa Pirc',
+            movesDisplay: ["1. e4 d6", "2. d4 Nf6", "3. Nc3 g6", "4. Nf3 Bg7", "5. Be2 O-O"],
+            movesEngine: ["e4", "d6", "d4", "Nf6", "Nc3", "g6", "Nf3", "Bg7", "Be2", "O-O"],
+            comments: [
+              "Toma el centro con el peón de rey.",
+              "La Defensa Pirc. Un enfoque hipermoderno flexible.",
+              "Las blancas establecen el centro ideal de peones.",
+              "Ataca e4 e impide un desarrollo tranquilo.",
+              "Defiende e4 y desarrolla el caballo.",
+              "Prepara el fianchetto del alfil de rey.",
+              "Desarrollo clásico del caballo de rey.",
+              "Completa el fianchetto, controlando la gran diagonal oscura.",
+              "Desarrollo tranquilo, preparando el enroque.",
+              "Las negras enrocan. Una posición sólida lista para contraatacar."
+            ]
+          },
+          {
+            id: 'alekhine',
+            category: 'semiabierta',
+            name: 'Defensa Alekhine',
+            movesDisplay: ["1. e4 Nf6", "2. e5 Nd5", "3. d4 d6", "4. c4 Nb6", "5. exd6 cxd6"],
+            movesEngine: ["e4", "Nf6", "e5", "Nd5", "d4", "d6", "c4", "Nb6", "exd6", "cxd6"],
+            comments: [
+              "Las blancas toman control del centro.",
+              "Defensa Alekhine. Provoca el avance de los peones blancos para atacarlos después.",
+              "Acepta el reto, ganando espacio y atacando el caballo.",
+              "El caballo se reubica en una casilla central segura.",
+              "Las blancas refuerzan su ventaja de espacio central.",
+              "Ataca la cadena de peones blancos desde la base.",
+              "Expulsa al caballo de d5, ganando aún más espacio.",
+              "El caballo se retira a b6, apuntando a c4 y d5.",
+              "Cambio en el centro para definir la estructura de peones.",
+              "Captura simétrica. Posición asimétrica con chances para ambos."
+            ]
+          },
+          {
+            id: 'ruy_lopez',
+            category: 'abierta',
+            name: 'Apertura Ruy López',
+            movesDisplay: ["1. e4 e5", "2. Nf3 Nc6", "3. Bb5 a6", "4. Ba4 Nf6", "5. O-O Be7"],
+            movesEngine: ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O", "Be7"],
+            comments: [
+              "Ocupa el centro y abre vías de desarrollo para el alfil y la dama.",
+              "Responde simétricamente, reclamando control central y evitando d4.",
+              "Desarrollo natural. Ataca el peón central de e5 y prepara el enroque.",
+              "Defiende el peón, desarrolla el caballo hacia el centro y controla d4.",
+              "Define la apertura. Presiona al defensor de e5 y crea tensión estratégica.",
+              "Defensa Morphy. Interroga al alfil: ¿capturar en c6 o retirarse?",
+              "El alfil se retira manteniendo la presión sobre el caballo defensor.",
+              "Desarrollo clásico. Ataca e4 y prepara el enroque corto de las negras.",
+              "Prioridad: Seguridad del rey. Las blancas completan su desarrollo inicial.",
+              "Defensa Cerrada. Jugada flexible que prepara el enroque y defiende d6."
+            ]
+          },
+          {
+            id: 'italiana',
+            category: 'abierta',
+            name: 'Apertura Italiana',
+            movesDisplay: ["1. e4 e5", "2. Nf3 Nc6", "3. Bc4 Bc5", "4. c3 Nf6", "5. d3 d6"],
+            movesEngine: ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "c3", "Nf6", "d3", "d6"],
+            comments: [
+              "Controla el centro y libera la dama y el alfil de rey.",
+              "Respuesta clásica para disputar el centro y permitir el desarrollo.",
+              "Desarrolla una pieza menor y presiona el peón de e5 inmediatamente.",
+              "Defiende e5 y prepara el desarrollo del flanco de dama.",
+              "La Italiana. Apunta al punto débil f7 antes del enroque negro.",
+              "Giuoco Piano. Desarrolla el alfil a una posición activa controlando d4.",
+              "Prepara el empuje central d4 para crear un centro de peones fuerte.",
+              "Contraataca el peón de e4 y desarrolla el caballo para enrocar.",
+              "Defensa sólida. Protege e4 y libera el alfil de dama.",
+              "Sostiene el centro y abre paso al alfil de casillas claras."
+            ]
+          },
+          {
+            id: 'siciliana',
+            category: 'semiabierta',
+            name: 'Defensa Siciliana',
+            movesDisplay: ["1. e4 c5", "2. Nf3 d6", "3. d4 cxd4", "4. Nxd4 Nf6", "5. Nc3 a6"],
+            movesEngine: ["e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "a6"],
+            comments: [
+              "Inicia la lucha por el centro con la jugada más ambiciosa.",
+              "La Siciliana. Crea una lucha asimétrica controlando d4 con un peón lateral.",
+              "Prepara d4 y desarrolla el caballo a su casilla más natural.",
+              "Controla e5 y mantiene flexibilidad en el desarrollo.",
+              "La apertura de la columna d. Abre el juego para las piezas blancas.",
+              "Las negras cambian su peón lateral por uno central (columna c abierta).",
+              "Centralización del caballo. Una posición muy activa y peligrosa.",
+              "Desarrolla atacando e4, obligando a las blancas a defenderlo.",
+              "Defensa natural de e4 mientras se desarrolla otra pieza menor.",
+              "Variante Najdorf. Controla b5 y prepara expansión en el flanco de dama."
+            ]
+          },
+          {
+            id: 'gambito_reina',
+            category: 'cerrada',
+            name: 'Gambito de Reina',
+            movesDisplay: ["1. d4 d5", "2. c4 e6", "3. Nc3 Nf6", "4. Bg5 Be7", "5. e3 O-O"],
+            movesEngine: ["d4", "d5", "c4", "e6", "Nc3", "Nf6", "Bg5", "Be7", "e3", "O-O"],
+            comments: [
+              "Ocupa el centro y prepara el desarrollo del alfil de dama.",
+              "Responde reclamando espacio central e impidiendo e4 inmediato.",
+              "El Gambito de Reina. Desafía d5 para ganar control del centro.",
+              "Gambito de Reina Reclinado. Defiende d5 de forma muy sólida.",
+              "Presiona d5 y desarrolla una pieza menor hacia el centro.",
+              "Desarrolla el caballo, controla e4 y protege el peón de d5.",
+              "Clava el caballo de f6, aumentando la presión sobre d5.",
+              "Rompe la clavada y prepara el enroque corto de las negras.",
+              "Refuerza d4 y abre la diagonal para el alfil de casillas blancas.",
+              "Asegura el rey antes de que las blancas abran el centro del tablero."
+            ]
+          },
+          {
+            id: 'francesa',
+            category: 'semiabierta',
+            name: 'Defensa Francesa',
+            movesDisplay: ["1. e4 e6", "2. d4 d5", "3. Nc3 Nf6", "4. Bg5 Be7", "5. e5 Nfd7"],
+            movesEngine: ["e4", "e6", "d4", "d5", "Nc3", "Nf6", "Bg5", "Be7", "e5", "Nfd7"],
+            comments: [
+              "Clásico avance central, controlando casillas clave.",
+              "La Francesa. Prepara d5 protegiendo el rey, aunque bloquea a su alfil.",
+              "Las blancas ocupan el centro ideal con sus dos peones.",
+              "Desafía directamente el centro blanco, forzando una decisión en e4.",
+              "Variante principal. Desarrolla y defiende e4 de forma agresiva.",
+              "Presiona e4 y desarrolla una pieza menor hacia el centro.",
+              "Clava al caballo atacante y prepara el avance e5 para ganar espacio.",
+              "Alivia la presión de la clavada y prepara el enroque corto.",
+              "Gana espacio central y obliga al caballo de f6 a retirarse.",
+              "El caballo se retira a una casilla sólida, preparando el contraataque c5."
+            ]
+          },
+          {
+            id: 'india_rey',
+            category: 'semicerrada',
+            name: 'Defensa India de Rey',
+            movesDisplay: ["1. d4 Nf6", "2. c4 g6", "3. Nc3 Bg7", "4. e4 d6", "5. Nf3 O-O"],
+            movesEngine: ["d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6", "Nf3", "O-O"],
+            comments: [
+              "Las blancas ocupan el centro con el peón de dama.",
+              "Respuesta hipermoderna: controla e4 y d5 con la pieza.",
+              "Las blancas preparan un centro de peones clásico.",
+              "Las negras preparan el fianchetto del alfil de rey.",
+              "Desarrollo central. Controla d5 y e4.",
+              "El alfil ocupa la gran diagonal, presionando el centro blanco.",
+              "Las blancas establecen el 'Centro Clásico' ideal.",
+              "Las negras limitan el avance de e4 y preparan el contrajuego central.",
+              "Desarrollo natural. Refuerza e5 y d4.",
+              "Las negras ponen a su rey a salvo y completan la primera fase."
+            ]
+          },
+          {
+            id: 'nimzoindia',
+            category: 'semicerrada',
+            name: 'Defensa Nimzoindia',
+            movesDisplay: ["1. d4 Nf6", "2. c4 e6", "3. Nc3 Bb4", "4. e3 O-O", "5. Bd3 d5"],
+            movesEngine: ["d4", "Nf6", "c4", "e6", "Nc3", "Bb4", "e3", "O-O", "Bd3", "d5"],
+            comments: [
+              "Inicio sólido ocupando el centro con el peón de dama.",
+              "Desarrollo flexible que impide el avance e4 inmediato.",
+              "Control del flanco de dama y preparación del centro.",
+              "Abre el camino al alfil de rey y mantiene opciones centrales.",
+              "Desarrollo del caballo presionando d5 y e4.",
+              "La Nimzoindia. Clava el caballo y controla indirectamente el centro.",
+              "Variante Rubinstein. Defensa sólida de d4 y preparación del desarrollo.",
+              "Prioridad a la seguridad del rey antes de la lucha central.",
+              "Desarrollo activo del alfil apuntando al flanco de rey.",
+              "Contragolpe central clásico para disputar el dominio blanco."
+            ]
+          },
+          {
+            id: 'sistema_londres',
+            category: 'cerrada',
+            name: 'Sistema Londres',
+            movesDisplay: ["1. d4 d5", "2. Nf3 Nf6", "3. Bf4 c5", "4. e3 Nc6", "5. c3 e6"],
+            movesEngine: ["d4", "d5", "Nf3", "Nf6", "Bf4", "c5", "e3", "Nc6", "c3", "e6"],
+            comments: [
+              "Apertura del peón de dama, controlando el centro.",
+              "Respuesta simétrica y sólida de las negras.",
+              "Desarrollo del caballo, apoyando d4 y e5.",
+              "Las negras desarrollan su caballo y preparan la lucha central.",
+              "La jugada característica del Londres. Desarrolla el alfil fuera de la cadena de peones.",
+              "Las negras golpean inmediatamente el centro atacando d4.",
+              "Sostiene el centro sólidamente y prepara el desarrollo del flanco de rey.",
+              "Aumenta la presión sobre d4 y desarrolla otra pieza menor.",
+              "Refuerza la estructura piramidal de peones blancos en el centro.",
+              "Desarrollo sólido que prepara la salida del alfil de casillas oscuras."
+            ]
+          },
+          {
+            id: 'colle',
+            category: 'cerrada',
+            name: 'Sistema Colle',
+            movesDisplay: ["1. d4 d5", "2. Nf3 Nf6", "3. e3 e6", "4. Bd3 c5", "5. c3 Nc6"],
+            movesEngine: ["d4", "d5", "Nf3", "Nf6", "e3", "e6", "Bd3", "c5", "c3", "Nc6"],
+            comments: [
+              "Apertura del peón de dama.",
+              "Las negras controlan el centro de forma clásica.",
+              "Desarrollo flexible apuntando a e5.",
+              "Desarrollo simétrico impidiendo e4.",
+              "Sólido, preparando el desarrollo del alfil de casillas claras.",
+              "Cierra el centro momentáneamente y prepara el enroque.",
+              "El alfil se sitúa en una diagonal activa (apuntando a h7).",
+              "Golpea el centro inmediatamente, el antídoto típico.",
+              "Apoya d4, consolidando la cuña central blanca.",
+              "Aumenta la presión sobre d4 y desarrolla otra pieza."
+            ]
+          },
+          {
+            id: 'catalana',
+            category: 'semicerrada',
+            name: 'Apertura Catalana',
+            movesDisplay: ["1. d4 Nf6", "2. c4 e6", "3. g3 d5", "4. Bg2 Be7", "5. Nf3 O-O"],
+            movesEngine: ["d4", "Nf6", "c4", "e6", "g3", "d5", "Bg2", "Be7", "Nf3", "O-O"],
+            comments: [
+              "Las blancas inician controlando el centro con el peón de dama.",
+              "Evita e4 inmediato y mantiene flexibilidad.",
+              "Gana espacio en el flanco de dama y presiona d5.",
+              "Prepara el desarrollo del alfil o un golpe central con d5.",
+              "Prepara el fianchetto, la marca registrada de la Catalana.",
+              "Las negras golpean el centro y transponen a un esquema de Gambito de Reina.",
+              "El alfil se ubica en la gran diagonal, ejerciendo presión a largo plazo.",
+              "Desarrollo conservador, preparando el enroque y defendiendo.",
+              "Desarrollo natural del caballo, controlando el centro.",
+              "Las negras aseguran su rey antes de resolver la tensión central."
+            ]
+          },
+          {
+            id: 'gambito_reina_aceptado',
+            category: 'cerrada',
+            name: 'Gambito de Reina Aceptado',
+            movesDisplay: ["1. d4 d5", "2. c4 dxc4", "3. Nf3 Nf6", "4. e3 e6", "5. Bxc4 c5"],
+            movesEngine: ["d4", "d5", "c4", "dxc4", "Nf3", "Nf6", "e3", "e6", "Bxc4", "c5"],
+            comments: [
+              "Apertura estándar del peón de dama.",
+              "Respuesta simétrica, controlando casillas centrales.",
+              "El Gambito de Reina. Las blancas ofrecen un peón lateral por control central.",
+              "Las negras aceptan el gambito, desviando un peón blanco del centro.",
+              "Desarrolla el caballo y previene el avance liberador e5 de las negras.",
+              "Desarrollo natural, controlando e4 y d5.",
+              "Prepara la recuperación del peón y abre paso al alfil de rey.",
+              "Defiende d5 sólidamente y prepara el desarrollo del alfil de rey.",
+              "Las blancas recuperan el peón y desarrollan una pieza activa.",
+              "Contragolpe típico: las negras atacan el centro blanco inmediatamente."
+            ]
+          },
+          {
+            id: 'eslava',
+            category: 'cerrada',
+            name: 'Defensa Eslava',
+            movesDisplay: ["1. d4 d5", "2. c4 c6", "3. Nf3 Nf6", "4. Nc3 dxc4", "5. a4 Bf5"],
+            movesEngine: ["d4", "d5", "c4", "c6", "Nf3", "Nf6", "Nc3", "dxc4", "a4", "Bf5"],
+            comments: [
+              "Ocupación central con el peón de dama.",
+              "Respuesta simétrica, controlando el centro.",
+              "El Gambito de Reina. Presiona el centro.",
+              "La Defensa Eslava. Apoya d5 sin bloquear el alfil de casillas claras.",
+              "Desarrolla el caballo y controla e5.",
+              "Desarrollo natural, manteniendo la flexibilidad.",
+              "Aumenta la presión sobre el centro negro.",
+              "Las negras capturan en c4, dispuestas a ganar actividad o defender el peón.",
+              "Previene b5, impidiendo que las negras defiendan el peón extra fácilmente.",
+              "El alfil se desarrolla activamente antes de que las negras jueguen e6."
+            ]
+          },
+          {
+            id: 'grunfeld',
+            category: 'semicerrada',
+            name: 'Defensa Grünfeld',
+            movesDisplay: ["1. d4 Nf6", "2. c4 g6", "3. Nc3 d5", "4. cxd5 Nxd5", "5. e4 Nxc3"],
+            movesEngine: ["d4", "Nf6", "c4", "g6", "Nc3", "d5", "cxd5", "Nxd5", "e4", "Nxc3"],
+            comments: [
+              "Ocupación central típica con el peón de dama.",
+              "Desarrollo flexible y control de casillas clave.",
+              "Gana espacio y apoya un futuro d5 o e4.",
+              "Prepara el fianchetto del alfil de rey.",
+              "Desarrolla el caballo y consolida el control de d5 y e4.",
+              "¡La Grünfeld! Golpea el centro inmediatamente.",
+              "Las blancas aceptan el reto y cambian peones en el centro.",
+              "El caballo recaptura y se centraliza temporalmente.",
+              "Toma el centro por completo, forzando al caballo a moverse.",
+              "Las negras cambian en c3 para desequilibrar la estructura de peones blancos."
+            ]
+          },
+          {
+            id: 'mexicana',
+            category: 'semicerrada',
+            name: 'Defensa Mexicana',
+            movesDisplay: ["1. d4 Nf6", "2. c4 Nc6", "3. Nf3 e6", "4. a3 d6", "5. Nc3 g6"],
+            movesEngine: ["d4", "Nf6", "c4", "Nc6", "Nf3", "e6", "a3", "d6", "Nc3", "g6"],
+            comments: [
+              "Ocupa el centro y prepara el desarrollo.",
+              "Respuesta flexible, apuntando a d5 y e4.",
+              "Expansión en el flanco de dama con el peón c.",
+              "¡La Defensa Mexicana o Tango! Desarrolla el caballo bloqueando su propio peón c.",
+              "Desarrollo natural y sólido del caballo de rey.",
+              "Abre líneas para el alfil y prepara un esquema restringido pero dinámico.",
+              "Jugada profiláctica, evita que el alfil negro salte a b4 de forma molesta.",
+              "Defiende y prepara una estructura de peones más cerrada.",
+              "Desarrolla el caballo de dama, aumentando la presión.",
+              "Prepara el fianchetto para tener perspectivas a largo plazo en la gran diagonal."
+            ]
+          },
+          {
+            id: 'benoni',
+            category: 'semicerrada',
+            name: 'Defensa Benoni',
+            movesDisplay: ["1. d4 Nf6", "2. c4 c5", "3. d5 e6", "4. Nc3 exd5", "5. cxd5 d6"],
+            movesEngine: ["d4", "Nf6", "c4", "c5", "d5", "e6", "Nc3", "exd5", "cxd5", "d6"],
+            comments: [
+              "Las blancas toman el centro con el peón d.",
+              "Evita e4 inmediato, controlando el centro con el caballo.",
+              "Gana espacio en el flanco de dama y apoya el centro.",
+              "¡El golpe Benoni! Ataca d4 directamente, buscando desequilibrio.",
+              "Avanza el peón, ganando espacio y cerrando el centro temporalmente.",
+              "Presiona d5, forzando una decisión sobre la estructura central.",
+              "Desarrolla el caballo y mantiene el control central de forma natural.",
+              "Cambio central, creando una mayoría asimétrica de peones para las blancas.",
+              "Las blancas recapturan, consolidando su ventaja de espacio en el centro.",
+              "Controla e5 y c5, preparando el desarrollo asimétrico del flanco de rey."
+            ]
+          },
+          {
+            id: 'benko',
+            category: 'semicerrada',
+            name: 'Gambito Benko',
+            movesDisplay: ["1. d4 Nf6", "2. c4 c5", "3. d5 b5", "4. cxb5 a6", "5. bxa6 g6"],
+            movesEngine: ["d4", "Nf6", "c4", "c5", "d5", "b5", "cxb5", "a6", "bxa6", "g6"],
+            comments: [
+              "Control central clásico con el peón de dama.",
+              "Respuesta flexible que mantiene opciones hipermodernas.",
+              "Las blancas buscan dominar el espacio central tempranamente.",
+              "Al igual que en la Benoni, las negras golpean fuertemente en d4.",
+              "Las blancas avanzan el peón ganando mucho espacio en el centro.",
+              "¡El Gambito Benko! (o Volga). Sacrifica un peón lateral para ganar iniciativa.",
+              "Acepta el primer peón del gambito para cuestionar la idea negra.",
+              "Ofrece un segundo peón para abrir completamente las columnas a y b.",
+              "Acepta el segundo peón. Las blancas tienen material extra, pero sufren presión.",
+              "Prepara el fianchetto del alfil para ejercer presión paralela al ataque de las torres."
+            ]
+          },
+          {
+            id: 'holandesa',
+            category: 'semicerrada',
+            name: 'Defensa Holandesa',
+            movesDisplay: ["1. d4 f5", "2. g3 Nf6", "3. Bg2 e6", "4. c4 Be7", "5. Nf3 O-O"],
+            movesEngine: ["d4", "f5", "g3", "Nf6", "Bg2", "e6", "c4", "Be7", "Nf3", "O-O"],
+            comments: [
+              "Las blancas toman el centro de manera tradicional.",
+              "¡La Holandesa! Rompe la simetría y controla la casilla e4 fuertemente.",
+              "Prepara el fianchetto del alfil para contrarrestar el control negro.",
+              "Desarrolla el caballo de rey hacia el centro.",
+              "El alfil se sitúa en la gran diagonal, apuntando al flanco de dama.",
+              "Sólida jugada preparatoria, abriendo paso al desarrollo del alfil.",
+              "Las blancas reclaman más espacio en el centro y flanco de dama.",
+              "Desarrollo tranquilo del alfil de rey, apuntando a enrocar rápido.",
+              "Desarrolla el caballo y consolida la posición elástica de las blancas.",
+              "Las negras enrocan rápidamente, asegurando al rey en su agresiva defensa."
+            ]
+          }
+        ];
+
+        function App() {
+          const audioCtxRef = useRef(null);
+          const analysisEndRef = useRef(null); 
+          
+          const [casillaActiva, setCasillaActiva] = useState(null);
+          const [notaActual, setNotaActual] = useState('Esperando jugada...'); 
+          
+          const [showAbiertas, setShowAbiertas] = useState(false);
+          const [showSemiabiertas, setShowSemiabiertas] = useState(false);
+          const [showCerradas, setShowCerradas] = useState(false);
+          const [showSemicerradas, setShowSemicerradas] = useState(false);
+
+          const [aperturaSeleccionada, setAperturaSeleccionada] = useState(OPENINGS_DB[0]);
+          const [isPlaying, setIsPlaying] = useState(false);
+          const [isMuted, setIsMuted] = useState(false);
+          const [isFlipped, setIsFlipped] = useState(false);
+          const [showTitle, setShowTitle] = useState(true);
+          
+          const [game, setGame] = useState(null);
+          const [selectedSquare, setSelectedSquare] = useState(null);
+          const [boardUpdate, setBoardUpdate] = useState(0);
+
+          useEffect(() => {
+            import('https://esm.sh/chess.js@1.0.0-beta.8').then(({ Chess }) => {
+              setGame(new Chess());
+            }).catch(err => console.error("Error cargando chess.js", err));
+
+            const timer = setTimeout(() => setShowTitle(false), 3000);
+            return () => clearTimeout(timer);
+          }, []);
+
+          useEffect(() => {
+            if (analysisEndRef.current) {
+              analysisEndRef.current.scrollIntoView({ behavior: 'smooth' });
+            }
+          }, [boardUpdate]);
+
+          const initAudio = () => {
+            if (!audioCtxRef.current) {
+              audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtxRef.current.state === 'suspended') {
+              audioCtxRef.current.resume();
+            }
+            return audioCtxRef.current;
+          };
+
+          const playTone = (ctx, freq, startTime, duration) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, startTime);
+            gain.gain.setValueAtTime(0, startTime);
+            gain.gain.linearRampToValueAtTime(0.3, startTime + 0.05);
+            gain.gain.setValueAtTime(0.3, startTime + duration - 0.1);
+            gain.gain.linearRampToValueAtTime(0, startTime + duration);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(startTime);
+            osc.stop(startTime + duration);
+          };
+
+          const reproducirApertura = async () => {
+            if (!game || isPlaying) return;
+            setIsPlaying(true);
+            game.reset();
             setBoardUpdate(prev => prev + 1);
             setSelectedSquare(null);
-          } else {
-            const piece = game.get(squareId);
-            if (piece && piece.color === game.turn()) setSelectedSquare(squareId);
-            else setSelectedSquare(null);
-          }
-        } catch (e) {
-          const piece = game.get(squareId);
-          if (piece && piece.color === game.turn()) setSelectedSquare(squareId);
-          else setSelectedSquare(null);
-        }
-      } else {
-        const piece = game.get(squareId);
-        if (piece && piece.color === game.turn()) setSelectedSquare(squareId);
-      }
-    }
 
-    const freq1 = FRECUENCIAS[file];
-    const freq2 = FRECUENCIAS[rank];
-    setCasillaActiva(squareId);
-    setNotaActual(isMuted ? squareId.toUpperCase() : `${squareId.toUpperCase()} | ${NOMBRES_NOTAS[file]}-${NOMBRES_NOTAS[rank]}`);
-    if (!isMuted) {
-      playTone(ctx, freq1, tiempoActual, duracion);
-      playTone(ctx, freq2, tiempoActual + duracion, duracion);
-    }
-    setTimeout(() => setCasillaActiva(null), duracion * 2 * 1000);
-  };
+            const ctx = initAudio();
+            const duracion = 0.4;
 
-  const selectOpening = (op) => {
-    setAperturaSeleccionada(op);
-    setShowAbiertas(false);
-    setShowSemiabiertas(false);
-    setShowCerradas(false);
-    setShowSemicerradas(false);
-    if (game) {
-      game.reset();
-      setBoardUpdate(prev => prev + 1);
-      setNotaActual(`${op.name}`);
-    }
-  };
+            for (let moveStr of aperturaSeleccionada.movesEngine) {
+              const move = game.move(moveStr);
+              if (move) {
+                setBoardUpdate(prev => prev + 1);
+                const file = move.to[0];
+                const rank = move.to[1];
+                setCasillaActiva(move.to);
+                setNotaActual(`${aperturaSeleccionada.name}`);
+                const tiempoActual = ctx.currentTime;
+                if (!isMuted) {
+                  playTone(ctx, FRECUENCIAS[file], tiempoActual, duracion);
+                  playTone(ctx, FRECUENCIAS[rank], tiempoActual + duracion, duracion);
+                }
+                await new Promise(resolve => setTimeout(resolve, 1500));
+              }
+            }
+            setCasillaActiva(null);
+            setIsPlaying(false);
+          };
 
-  const toggleMenu = (menuSetter, currentVal) => {
-    setShowAbiertas(false);
-    setShowSemiabiertas(false);
-    setShowCerradas(false);
-    setShowSemicerradas(false);
-    menuSetter(!currentVal);
-  };
+          const resetBoard = () => {
+            if (game) {
+              game.reset();
+              setBoardUpdate(prev => prev + 1);
+              setSelectedSquare(null);
+              setCasillaActiva(null);
+              setIsPlaying(false);
+              setNotaActual('Tablero reiniciado');
+            }
+          };
 
-  return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-2 sm:p-4 font-sans text-slate-200">
-      <div className="max-w-4xl w-full bg-slate-800 p-4 sm:p-8 rounded-2xl shadow-2xl border border-slate-700">
-        
-        {showTitle && (
-          <div className="text-center mb-4 transition-opacity duration-1000 ease-in-out">
-            <h1 className="text-3xl sm:text-4xl font-extrabold text-white flex items-center justify-center gap-3">
-              <Volume2 className="text-emerald-400 w-8 h-8 sm:w-10 h-10" /> Ajedrez Musical
-            </h1>
-          </div>
-        )}
+          const undoMove = () => {
+            if (game && !isPlaying) {
+              const move = game.undo();
+              if (move) {
+                setBoardUpdate(prev => prev + 1);
+                setSelectedSquare(null);
+                setCasillaActiva(null);
+                setNotaActual('Deshacer');
+              }
+            }
+          };
 
-        <div className="mb-4 flex flex-col items-center w-full relative z-30 gap-4">
-          
-          {/* Clasificación Técnica */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
-            <div className="relative">
-              <button onClick={() => toggleMenu(setShowAbiertas, showAbiertas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showAbiertas ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
-                <BookOpen size={16} className={showAbiertas ? 'text-white' : 'text-blue-400'} /> ABIERTAS
-              </button>
-              {showAbiertas && (
-                <div className="absolute top-12 left-0 bg-slate-900 border-2 border-blue-500 rounded-xl p-2 w-64 shadow-2xl z-50 flex flex-col gap-1">
-                  <p className="text-sm text-blue-400 uppercase font-bold px-2 py-1 border-b border-slate-800">1.e4 e5</p>
-                  {OPENINGS_DB.filter(o => o.category === 'abierta').map(op => (
-                    <button key={op.id} onClick={() => selectOpening(op)} className="text-left px-4 py-3 text-sm rounded-lg hover:bg-blue-900/40">{op.name}</button>
-                  ))}
-                </div>
-              )}
-            </div>
+          const toggleOrientation = () => setIsFlipped(!isFlipped);
 
-            <div className="relative">
-              <button onClick={() => toggleMenu(setShowSemiabiertas, showSemiabiertas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showSemiabiertas ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
-                <BookOpen size={16} className={showSemiabiertas ? 'text-white' : 'text-indigo-400'} /> SEMIABIERTAS
-              </button>
-              {showSemiabiertas && (
-                <div className="absolute top-12 left-0 bg-slate-900 border-2 border-indigo-500 rounded-xl p-2 w-64 shadow-2xl z-50 flex flex-col gap-1">
-                  <p className="text-sm text-indigo-400 uppercase font-bold px-2 py-1 border-b border-slate-800">Asimétricas</p>
-                  {OPENINGS_DB.filter(o => o.category === 'semiabierta').map(op => (
-                    <button key={op.id} onClick={() => selectOpening(op)} className="text-left px-4 py-3 text-sm rounded-lg hover:bg-indigo-900/40">{op.name}</button>
-                  ))}
-                </div>
-              )}
-            </div>
+          const stepForward = () => {
+            if (!game || isPlaying) return;
+            const nextMoveIndex = game.history().length;
+            if (nextMoveIndex < aperturaSeleccionada.movesEngine.length) {
+              try {
+                const move = game.move(aperturaSeleccionada.movesEngine[nextMoveIndex]);
+                if (move) {
+                  setBoardUpdate(prev => prev + 1);
+                  const file = move.to[0];
+                  const rank = move.to[1];
+                  setCasillaActiva(move.to);
+                  setNotaActual(`${aperturaSeleccionada.name}`);
+                  const ctx = initAudio();
+                  const tiempoActual = ctx.currentTime;
+                  const duracion = 0.4;
+                  if (!isMuted) {
+                    playTone(ctx, FRECUENCIAS[file], tiempoActual, duracion);
+                    playTone(ctx, FRECUENCIAS[rank], tiempoActual + duracion, duracion);
+                  }
+                  setTimeout(() => setCasillaActiva(null), duracion * 2 * 1000);
+                }
+              } catch (e) {
+                setNotaActual('Variante detectada');
+              }
+            }
+          };
 
-            <div className="relative">
-              <button onClick={() => toggleMenu(setShowCerradas, showCerradas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showCerradas ? 'bg-amber-600 border-amber-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
-                <BookOpen size={16} className={showCerradas ? 'text-white' : 'text-amber-400'} /> CERRADAS
-              </button>
-              {showCerradas && (
-                <div className="absolute top-12 left-0 md:left-auto md:right-0 bg-slate-900 border-2 border-amber-500 rounded-xl p-2 w-64 shadow-2xl z-50 flex flex-col gap-1">
-                  <p className="text-sm text-amber-400 uppercase font-bold px-2 py-1 border-b border-slate-800">1.d4 d5</p>
-                  {OPENINGS_DB.filter(o => o.category === 'cerrada').map(op => (
-                    <button key={op.id} onClick={() => selectOpening(op)} className="text-left px-4 py-3 text-sm rounded-lg hover:bg-amber-900/40">{op.name}</button>
-                  ))}
-                </div>
-              )}
-            </div>
+          const handleSquareClick = (file, rank) => {
+            if (isPlaying) return;
+            const ctx = initAudio();
+            const tiempoActual = ctx.currentTime;
+            const duracion = 0.4;
+            const squareId = `${file}${rank}`;
 
-            <div className="relative">
-              <button onClick={() => toggleMenu(setShowSemicerradas, showSemicerradas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showSemicerradas ? 'bg-rose-600 border-rose-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
-                <BookOpen size={16} className={showSemicerradas ? 'text-white' : 'text-rose-400'} /> SEMICERRADAS
-              </button>
-              {showSemicerradas && (
-                <div className="absolute top-12 right-0 bg-slate-900 border-2 border-rose-500 rounded-xl p-2 w-64 shadow-2xl z-50 flex flex-col gap-1">
-                  <p className="text-sm text-rose-400 uppercase font-bold px-2 py-1 border-b border-slate-800">Indias/Otros</p>
-                  {OPENINGS_DB.filter(o => o.category === 'semicerrada').map(op => (
-                    <button key={op.id} onClick={() => selectOpening(op)} className="text-left px-4 py-3 text-sm rounded-lg hover:bg-rose-900/40">{op.name}</button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+            if (game) {
+              if (selectedSquare) {
+                try {
+                  const move = game.move({ from: selectedSquare, to: squareId, promotion: 'q' });
+                  if (move) {
+                    setBoardUpdate(prev => prev + 1);
+                    setSelectedSquare(null);
+                  } else {
+                    const piece = game.get(squareId);
+                    if (piece && piece.color === game.turn()) setSelectedSquare(squareId);
+                    else setSelectedSquare(null);
+                  }
+                } catch (e) {
+                  const piece = game.get(squareId);
+                  if (piece && piece.color === game.turn()) setSelectedSquare(squareId);
+                  else setSelectedSquare(null);
+                }
+              } else {
+                const piece = game.get(squareId);
+                if (piece && piece.color === game.turn()) setSelectedSquare(squareId);
+              }
+            }
 
-          {/* Controles Principales */}
-          <div className="flex items-center justify-center gap-2 w-full max-w-[550px]">
-            {/* Silencio */}
-            <button onClick={() => setIsMuted(!isMuted)} disabled={isPlaying} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${isMuted ? 'bg-rose-600 hover:bg-rose-500 border-rose-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title={isMuted ? "Activar Sonido" : "Silenciar"}>
-              {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-            </button>
+            const freq1 = FRECUENCIAS[file];
+            const freq2 = FRECUENCIAS[rank];
+            setCasillaActiva(squareId);
+            setNotaActual(isMuted ? squareId.toUpperCase() : `${squareId.toUpperCase()} | ${NOMBRES_NOTAS[file]}-${NOMBRES_NOTAS[rank]}`);
+            if (!isMuted) {
+              playTone(ctx, freq1, tiempoActual, duracion);
+              playTone(ctx, freq2, tiempoActual + duracion, duracion);
+            }
+            setTimeout(() => setCasillaActiva(null), duracion * 2 * 1000);
+          };
 
-            {/* Reiniciar */}
-            <button onClick={resetBoard} disabled={isPlaying} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white disabled:text-slate-500 shadow-md">
-              <RefreshCw size={18} />
-            </button>
+          const selectOpening = (op) => {
+            setAperturaSeleccionada(op);
+            setShowAbiertas(false);
+            setShowSemiabiertas(false);
+            setShowCerradas(false);
+            setShowSemicerradas(false);
+            if (game) {
+              game.reset();
+              setBoardUpdate(prev => prev + 1);
+              setNotaActual(`${op.name}`);
+            }
+          };
 
-            {/* Grupo Playback */}
-            <div className="flex items-center flex-1 h-10 rounded-xl overflow-hidden border-2 border-slate-600 shadow-lg bg-slate-700 max-w-[320px]">
-              <button onClick={undoMove} disabled={isPlaying} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-r border-slate-600 text-white disabled:text-slate-500">
-                <Undo2 size={18} />
-              </button>
-              <button onClick={reproducirApertura} disabled={isPlaying} className="flex-[2.5] h-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-tighter disabled:bg-slate-600 disabled:text-slate-400">
-                <Play size={18} className={isPlaying ? "text-slate-400 animate-pulse" : "text-yellow-400"} /> 
-                {isPlaying ? 'Tocando' : 'Reproducir'}
-              </button>
-              <button onClick={stepForward} disabled={isPlaying} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500">
-                <StepForward size={18} />
-              </button>
-            </div>
+          const toggleMenu = (menuSetter, currentVal) => {
+            setShowAbiertas(false);
+            setShowSemiabiertas(false);
+            setShowCerradas(false);
+            setShowSemicerradas(false);
+            menuSetter(!currentVal);
+          };
 
-            {/* Girar Tablero */}
-            <button onClick={toggleOrientation} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md">
-              <ArrowUpDown size={18} className="text-emerald-400" />
-            </button>
-          </div>
-        </div>
+          return (
+            <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-2 sm:p-4 font-sans text-slate-200">
+              <div className="max-w-4xl w-full bg-slate-800 p-4 sm:p-8 rounded-2xl shadow-2xl border border-slate-700">
+                
+                {showTitle && (
+                  <div className="text-center mb-4 transition-opacity duration-1000 ease-in-out">
+                    <h1 className="text-3xl sm:text-4xl font-extrabold text-white flex items-center justify-center gap-3">
+                      <Volume2 className="text-emerald-400 w-8 h-8 sm:w-10 h-10" /> Ajedrez Musical
+                    </h1>
+                  </div>
+                )}
 
-        {/* Tablero y Análisis */}
-        <div className="flex flex-col items-center justify-center w-full gap-4">
-          <div className="flex flex-col md:flex-row items-stretch justify-center gap-4 w-full">
-            {/* Tablero */}
-            <div className="relative border-[4px] border-slate-700 rounded-lg shadow-2xl flex flex-col w-full max-w-[400px] aspect-square mx-auto md:mx-0">
-              {!game && <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/80 text-white font-bold rounded-lg">Cargando...</div>}
-              {(isFlipped ? [...RANKS].reverse() : RANKS).map((rank, rankIndex) => (
-                <div key={rank} className="flex flex-1 w-full aspect-[8/1]">
-                  {(isFlipped ? [...FILES].reverse() : FILES).map((file, fileIndex) => {
-                    const squareId = `${file}${rank}`;
-                    const esCasillaClara = (rankIndex + fileIndex) % 2 === 0;
-                    const isActiva = casillaActiva === squareId || selectedSquare === squareId;
-                    const piece = game ? game.get(squareId) : null;
-                    const pieceImg = piece ? PIECES_WIKIPEDIA[piece.color][piece.type] : null;
-                    return (
-                      <button key={squareId} onClick={() => handleSquareClick(file, rank)} className={`relative flex-1 aspect-square select-none transition-all duration-200 flex items-center justify-center ${esCasillaClara ? 'bg-[#ebecd0]' : 'bg-[#779556]'} ${isActiva ? 'ring-inset ring-2 ring-yellow-400 bg-yellow-100 z-10 scale-[1.02] shadow-sm' : ''} ${selectedSquare === squareId ? 'bg-yellow-300 ring-yellow-500' : ''}`}>
-                        {pieceImg && <img src={pieceImg} alt="" className="w-[85%] h-[85%] object-contain drop-shadow-md pointer-events-none" />}
-                        {fileIndex === 0 && <span className={`absolute top-0.5 left-1 text-[8px] font-bold ${esCasillaClara ? 'text-[#779556]' : 'text-[#ebecd0]'}`}>{rank}</span>}
-                        {rankIndex === 7 && <span className={`absolute bottom-0.5 right-1 text-[8px] font-bold ${esCasillaClara ? 'text-[#779556]' : 'text-[#ebecd0]'}`}>{file}</span>}
+                <div className="mb-4 flex flex-col items-center w-full relative z-30 gap-4">
+                  
+                  {/* Clasificación Técnica */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
+                    <div className="relative">
+                      <button onClick={() => toggleMenu(setShowAbiertas, showAbiertas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showAbiertas ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
+                        <BookOpen size={16} className={showAbiertas ? 'text-white' : 'text-blue-400'} /> ABIERTAS
                       </button>
-                    );
-                  })}
+                      {showAbiertas && (
+                        <div className="absolute top-12 left-0 bg-slate-900 border-2 border-blue-500 rounded-xl p-2 w-64 shadow-2xl z-50 flex flex-col gap-1">
+                          <p className="text-sm text-blue-400 uppercase font-bold px-2 py-1 border-b border-slate-800">1.e4 e5</p>
+                          {OPENINGS_DB.filter(o => o.category === 'abierta').map(op => (
+                            <button key={op.id} onClick={() => selectOpening(op)} className="text-left px-4 py-3 text-sm rounded-lg hover:bg-blue-900/40">{op.name}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="relative">
+                      <button onClick={() => toggleMenu(setShowSemiabiertas, showSemiabiertas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showSemiabiertas ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
+                        <BookOpen size={16} className={showSemiabiertas ? 'text-white' : 'text-indigo-400'} /> SEMIABIERTAS
+                      </button>
+                      {showSemiabiertas && (
+                        <div className="absolute top-12 left-0 bg-slate-900 border-2 border-indigo-500 rounded-xl p-2 w-64 shadow-2xl z-50 flex flex-col gap-1">
+                          <p className="text-sm text-indigo-400 uppercase font-bold px-2 py-1 border-b border-slate-800">Asimétricas</p>
+                          {OPENINGS_DB.filter(o => o.category === 'semiabierta').map(op => (
+                            <button key={op.id} onClick={() => selectOpening(op)} className="text-left px-4 py-3 text-sm rounded-lg hover:bg-indigo-900/40">{op.name}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="relative">
+                      <button onClick={() => toggleMenu(setShowCerradas, showCerradas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showCerradas ? 'bg-amber-600 border-amber-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
+                        <BookOpen size={16} className={showCerradas ? 'text-white' : 'text-amber-400'} /> CERRADAS
+                      </button>
+                      {showCerradas && (
+                        <div className="absolute top-12 left-0 md:left-auto md:right-0 bg-slate-900 border-2 border-amber-500 rounded-xl p-2 w-64 shadow-2xl z-50 flex flex-col gap-1">
+                          <p className="text-sm text-amber-400 uppercase font-bold px-2 py-1 border-b border-slate-800">1.d4 d5</p>
+                          {OPENINGS_DB.filter(o => o.category === 'cerrada').map(op => (
+                            <button key={op.id} onClick={() => selectOpening(op)} className="text-left px-4 py-3 text-sm rounded-lg hover:bg-amber-900/40">{op.name}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="relative">
+                      <button onClick={() => toggleMenu(setShowSemicerradas, showSemicerradas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showSemicerradas ? 'bg-rose-600 border-rose-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
+                        <BookOpen size={16} className={showSemicerradas ? 'text-white' : 'text-rose-400'} /> SEMICERRADAS
+                      </button>
+                      {showSemicerradas && (
+                        <div className="absolute top-12 right-0 bg-slate-900 border-2 border-rose-500 rounded-xl p-2 w-64 shadow-2xl z-50 flex flex-col gap-1">
+                          <p className="text-sm text-rose-400 uppercase font-bold px-2 py-1 border-b border-slate-800">Indias/Otros</p>
+                          {OPENINGS_DB.filter(o => o.category === 'semicerrada').map(op => (
+                            <button key={op.id} onClick={() => selectOpening(op)} className="text-left px-4 py-3 text-sm rounded-lg hover:bg-rose-900/40">{op.name}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Controles Principales */}
+                  <div className="flex items-center justify-center gap-2 w-full max-w-[550px]">
+                    {/* Silencio */}
+                    <button onClick={() => setIsMuted(!isMuted)} disabled={isPlaying} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${isMuted ? 'bg-rose-600 hover:bg-rose-500 border-rose-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title={isMuted ? "Activar Sonido" : "Silenciar"}>
+                      {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                    </button>
+
+                    {/* Reiniciar */}
+                    <button onClick={resetBoard} disabled={isPlaying} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white disabled:text-slate-500 shadow-md">
+                      <RefreshCw size={18} />
+                    </button>
+
+                    {/* Grupo Playback */}
+                    <div className="flex items-center flex-1 h-10 rounded-xl overflow-hidden border-2 border-slate-600 shadow-lg bg-slate-700 max-w-[320px]">
+                      <button onClick={undoMove} disabled={isPlaying} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-r border-slate-600 text-white disabled:text-slate-500">
+                        <Undo2 size={18} />
+                      </button>
+                      <button onClick={reproducirApertura} disabled={isPlaying} className="flex-[2.5] h-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-tighter disabled:bg-slate-600 disabled:text-slate-400">
+                        <Play size={18} className={isPlaying ? "text-slate-400 animate-pulse" : "text-yellow-400"} /> 
+                        {isPlaying ? 'Tocando' : 'Reproducir'}
+                      </button>
+                      <button onClick={stepForward} disabled={isPlaying} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500">
+                        <StepForward size={18} />
+                      </button>
+                    </div>
+
+                    {/* Girar Tablero */}
+                    <button onClick={toggleOrientation} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md">
+                      <ArrowUpDown size={18} className="text-emerald-400" />
+                    </button>
+                  </div>
                 </div>
-              ))}
-            </div>
 
-            {/* Panel Lateral (Integrado) */}
-            <div className="w-full md:w-44 relative min-h-[250px] flex-shrink-0">
-              <div className="absolute inset-0 bg-slate-900 border-2 border-slate-700 rounded-xl shadow-2xl flex flex-col items-center justify-start overflow-hidden">
-                 
-                 {/* Nueva ubicación del Nombre de la Apertura / Estado */}
-                 <div className="w-full bg-emerald-900/30 border-b border-emerald-500/20 py-2 px-2 text-center">
-                   <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-bold leading-tight min-h-[1.5rem] flex items-center justify-center">
-                     {notaActual}
-                   </p>
-                 </div>
+                {/* Tablero y Análisis */}
+                <div className="flex flex-col items-center justify-center w-full gap-4">
+                  <div className="flex flex-col md:flex-row items-stretch justify-center gap-4 w-full">
+                    {/* Tablero */}
+                    <div className="relative border-[4px] border-slate-700 rounded-lg shadow-2xl flex flex-col w-full max-w-[400px] aspect-square mx-auto md:mx-0">
+                      {!game && <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/80 text-white font-bold rounded-lg">Cargando...</div>}
+                      {(isFlipped ? [...RANKS].reverse() : RANKS).map((rank, rankIndex) => (
+                        <div key={rank} className="flex flex-1 w-full aspect-[8/1]">
+                          {(isFlipped ? [...FILES].reverse() : FILES).map((file, fileIndex) => {
+                            const squareId = `${file}${rank}`;
+                            const esCasillaClara = (rankIndex + fileIndex) % 2 === 0;
+                            const isActiva = casillaActiva === squareId || selectedSquare === squareId;
+                            const piece = game ? game.get(squareId) : null;
+                            const pieceImg = piece ? PIECES_WIKIPEDIA[piece.color][piece.type] : null;
+                            return (
+                              <button key={squareId} onClick={() => handleSquareClick(file, rank)} className={`relative flex-1 aspect-square select-none transition-all duration-200 flex items-center justify-center ${esCasillaClara ? 'bg-[#ebecd0]' : 'bg-[#779556]'} ${isActiva ? 'ring-inset ring-2 ring-yellow-400 bg-yellow-100 z-10 scale-[1.02] shadow-sm' : ''} ${selectedSquare === squareId ? 'bg-yellow-300 ring-yellow-500' : ''}`}>
+                                {pieceImg && <img src={pieceImg} alt="" className="w-[85%] h-[85%] object-contain drop-shadow-md pointer-events-none" />}
+                                {fileIndex === 0 && <span className={`absolute top-0.5 left-1 text-[8px] font-bold ${esCasillaClara ? 'text-[#779556]' : 'text-[#ebecd0]'}`}>{rank}</span>}
+                                {rankIndex === 7 && <span className={`absolute bottom-0.5 right-1 text-[8px] font-bold ${esCasillaClara ? 'text-[#779556]' : 'text-[#ebecd0]'}`}>{file}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
 
-                 <h4 className="text-[9px] text-slate-500 uppercase font-black mt-2 mb-1 border-b border-slate-800 w-full text-center pb-1">Secuencia</h4>
-                 <div className="w-full text-[10px] font-mono space-y-1 mb-2 bg-slate-800/50 p-1.5">
-                   {Array.from({ length: 5 }).map((_, i) => {
-                     const wIndex = i * 2; const bIndex = i * 2 + 1;
-                     const history = game ? game.history() : [];
-                     const expectedW = aperturaSeleccionada.movesEngine[wIndex];
-                     const expectedB = aperturaSeleccionada.movesEngine[bIndex];
-                     const isWCorrect = history.length > wIndex && history.slice(0, wIndex + 1).every((m, idx) => m === aperturaSeleccionada.movesEngine[idx]);
-                     const isBCorrect = history.length > bIndex && history.slice(0, bIndex + 1).every((m, idx) => m === aperturaSeleccionada.movesEngine[idx]);
-                     return (
-                       <div key={i} className="flex justify-between w-full border-b border-slate-700/30 pb-0.5 last:border-0 px-1">
-                         <span className="text-slate-600 font-bold">{i + 1}.</span>
-                         <span className={`w-8 text-center ${isWCorrect ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>{expectedW || '-'}</span>
-                         <span className={`w-8 text-center ${isBCorrect ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>{expectedB || '-'}</span>
-                       </div>
-                     );
-                   })}
-                 </div>
-                 
-                 <div className="w-full mt-1 pt-1 border-t border-slate-800 flex flex-col items-center overflow-y-auto flex-1 scroll-smooth no-scrollbar">
-                   <h4 className="text-[9px] text-emerald-500 uppercase font-black mb-2 text-center">Análisis</h4>
-                   <div className="w-full space-y-2 pb-2 px-1">
-                     {(game ? game.history() : []).map((move, idx) => {
-                       const isCorrect = move === aperturaSeleccionada.movesEngine[idx];
-                       const comment = isCorrect ? (aperturaSeleccionada.comments[idx] || "Estándar.") : "Variante.";
-                       const prefix = (idx % 2 === 0) ? `${Math.floor(idx / 2) + 1}.` : `${Math.floor(idx / 2) + 1}...`;
-                       return (
-                         <div key={idx} className={`flex flex-col bg-slate-800 p-2 rounded-lg border-l-2 shadow-sm ${isCorrect ? 'border-emerald-500' : 'border-rose-500'}`}>
-                           <span className={`text-[10px] font-mono font-black ${isCorrect ? 'text-emerald-400' : 'text-rose-400'}`}>{prefix} {move}</span>
-                           <span className="text-[9px] text-slate-300 leading-tight italic">{comment}</span>
+                    {/* Panel Lateral (Integrado) */}
+                    <div className="w-full md:w-44 relative min-h-[250px] flex-shrink-0">
+                      <div className="absolute inset-0 bg-slate-900 border-2 border-slate-700 rounded-xl shadow-2xl flex flex-col items-center justify-start overflow-hidden">
+                         
+                         {/* Nueva ubicación del Nombre de la Apertura / Estado */}
+                         <div className="w-full bg-emerald-900/30 border-b border-emerald-500/20 py-2 px-2 text-center">
+                           <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-bold leading-tight min-h-[1.5rem] flex items-center justify-center">
+                             {notaActual}
+                           </p>
                          </div>
-                       );
-                     })}
-                     <div ref={analysisEndRef} />
-                   </div>
-                 </div>
+
+                         <h4 className="text-[9px] text-slate-500 uppercase font-black mt-2 mb-1 border-b border-slate-800 w-full text-center pb-1">Secuencia</h4>
+                         <div className="w-full text-[10px] font-mono space-y-1 mb-2 bg-slate-800/50 p-1.5">
+                           {Array.from({ length: 5 }).map((_, i) => {
+                             const wIndex = i * 2; const bIndex = i * 2 + 1;
+                             const history = game ? game.history() : [];
+                             const expectedW = aperturaSeleccionada.movesEngine[wIndex];
+                             const expectedB = aperturaSeleccionada.movesEngine[bIndex];
+                             const isWCorrect = history.length > wIndex && history.slice(0, wIndex + 1).every((m, idx) => m === aperturaSeleccionada.movesEngine[idx]);
+                             const isBCorrect = history.length > bIndex && history.slice(0, bIndex + 1).every((m, idx) => m === aperturaSeleccionada.movesEngine[idx]);
+                             return (
+                               <div key={i} className="flex justify-between w-full border-b border-slate-700/30 pb-0.5 last:border-0 px-1">
+                                 <span className="text-slate-600 font-bold">{i + 1}.</span>
+                                 <span className={`w-8 text-center ${isWCorrect ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>{expectedW || '-'}</span>
+                                 <span className={`w-8 text-center ${isBCorrect ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>{expectedB || '-'}</span>
+                               </div>
+                             );
+                           })}
+                         </div>
+                         
+                         <div className="w-full mt-1 pt-1 border-t border-slate-800 flex flex-col items-center overflow-y-auto flex-1 scroll-smooth no-scrollbar">
+                           <h4 className="text-[9px] text-emerald-500 uppercase font-black mb-2 text-center">Análisis</h4>
+                           <div className="w-full space-y-2 pb-2 px-1">
+                             {(game ? game.history() : []).map((move, idx) => {
+                               const isCorrect = move === aperturaSeleccionada.movesEngine[idx];
+                               const comment = isCorrect ? (aperturaSeleccionada.comments[idx] || "Estándar.") : "Variante.";
+                               const prefix = (idx % 2 === 0) ? `${Math.floor(idx / 2) + 1}.` : `${Math.floor(idx / 2) + 1}...`;
+                               return (
+                                 <div key={idx} className={`flex flex-col bg-slate-800 p-2 rounded-lg border-l-2 shadow-sm ${isCorrect ? 'border-emerald-500' : 'border-rose-500'}`}>
+                                   <span className={`text-[10px] font-mono font-black ${isCorrect ? 'text-emerald-400' : 'text-rose-400'}`}>{prefix} {move}</span>
+                                   <span className="text-[9px] text-slate-300 leading-tight italic">{comment}</span>
+                                 </div>
+                               );
+                             })}
+                             <div ref={analysisEndRef} />
+                           </div>
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+          );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
