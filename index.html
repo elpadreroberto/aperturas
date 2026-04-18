@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -15,7 +15,7 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useRef, useEffect } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-        import { Volume2, VolumeX, BookOpen, ChevronDown, ChevronUp, Play, RefreshCw, ArrowUpDown, Undo2, StepForward } from 'https://esm.sh/lucide-react@0.292.0';
+        import { Volume2, VolumeX, BookOpen, ChevronDown, ChevronUp, Play, RefreshCw, ArrowUpDown, Undo2, StepForward, Palette } from 'https://esm.sh/lucide-react@0.292.0';
 
         // Mapeo de frecuencias para la escala (A4 a A5)
         const FRECUENCIAS = {
@@ -51,6 +51,13 @@
 
         const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
         const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'];
+
+        const BOARD_THEMES = [
+          { light: '#ebecd0', dark: '#779556' }, // Verde Clásico
+          { light: '#cbd5e1', dark: '#334155' }, // Azul Oscuro (Combina con la página)
+          { light: '#f0d9b5', dark: '#b58863' }, // Madera Clásica
+          { light: '#e2e8f0', dark: '#64748b' }  // Gris Pizarra
+        ];
 
         const OPENINGS_DB = [
           {
@@ -528,6 +535,7 @@
           const [isMuted, setIsMuted] = useState(false);
           const [isFlipped, setIsFlipped] = useState(false);
           const [showTitle, setShowTitle] = useState(true);
+          const [themeIndex, setThemeIndex] = useState(0);
           
           const [game, setGame] = useState(null);
           const [selectedSquare, setSelectedSquare] = useState(null);
@@ -718,18 +726,18 @@
           };
 
           return (
-            <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-2 sm:p-4 font-sans text-slate-200">
-              <div className="max-w-4xl w-full bg-slate-800 p-4 sm:p-8 rounded-2xl shadow-2xl border border-slate-700">
+            <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 sm:p-8 font-sans text-slate-200">
+              <div className="w-full max-w-6xl">
                 
                 {showTitle && (
-                  <div className="text-center mb-4 transition-opacity duration-1000 ease-in-out">
+                  <div className="text-center mb-6 transition-opacity duration-1000 ease-in-out">
                     <h1 className="text-3xl sm:text-4xl font-extrabold text-white flex items-center justify-center gap-3">
                       <Volume2 className="text-emerald-400 w-8 h-8 sm:w-10 h-10" /> Ajedrez Musical
                     </h1>
                   </div>
                 )}
 
-                <div className="mb-4 flex flex-col items-center w-full relative z-30 gap-4">
+                <div className="mb-6 flex flex-col items-center w-full relative z-30 gap-6">
                   
                   {/* Clasificación Técnica */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
@@ -776,14 +784,14 @@
                     </div>
 
                     <div className="relative">
-                      <button onClick={() => toggleMenu(setShowSemicerradas, showSemicerradas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showSemicerradas ? 'bg-rose-600 border-rose-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
-                        <BookOpen size={16} className={showSemicerradas ? 'text-white' : 'text-rose-400'} /> SEMICERRADAS
+                      <button onClick={() => toggleMenu(setShowSemicerradas, showSemicerradas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showSemicerradas ? 'bg-green-600 border-green-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
+                        <BookOpen size={16} className={showSemicerradas ? 'text-white' : 'text-green-400'} /> SEMICERRADAS
                       </button>
                       {showSemicerradas && (
-                        <div className="absolute top-12 right-0 bg-slate-900 border-2 border-rose-500 rounded-xl p-2 w-64 shadow-2xl z-50 flex flex-col gap-1">
-                          <p className="text-sm text-rose-400 uppercase font-bold px-2 py-1 border-b border-slate-800">Indias/Otros</p>
+                        <div className="absolute top-12 right-0 bg-slate-900 border-2 border-green-500 rounded-xl p-2 w-64 shadow-2xl z-50 flex flex-col gap-1">
+                          <p className="text-sm text-green-400 uppercase font-bold px-2 py-1 border-b border-slate-800">Indias/Otros</p>
                           {OPENINGS_DB.filter(o => o.category === 'semicerrada').map(op => (
-                            <button key={op.id} onClick={() => selectOpening(op)} className="text-left px-4 py-3 text-sm rounded-lg hover:bg-rose-900/40">{op.name}</button>
+                            <button key={op.id} onClick={() => selectOpening(op)} className="text-left px-4 py-3 text-sm rounded-lg hover:bg-green-900/40">{op.name}</button>
                           ))}
                         </div>
                       )}
@@ -820,6 +828,11 @@
                     <button onClick={toggleOrientation} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md">
                       <ArrowUpDown size={18} className="text-emerald-400" />
                     </button>
+
+                    {/* Cambiar Color Tablero */}
+                    <button onClick={() => setThemeIndex((prev) => (prev + 1) % BOARD_THEMES.length)} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md" title="Cambiar color del tablero">
+                      <Palette size={18} className="text-sky-400" />
+                    </button>
                   </div>
                 </div>
 
@@ -827,7 +840,7 @@
                 <div className="flex flex-col items-center justify-center w-full gap-4">
                   <div className="flex flex-col md:flex-row items-stretch justify-center gap-4 w-full">
                     {/* Tablero */}
-                    <div className="relative border-[4px] border-slate-700 rounded-lg shadow-2xl flex flex-col w-full max-w-[400px] aspect-square mx-auto md:mx-0">
+                    <div className="relative border-[4px] border-slate-700 rounded-lg shadow-2xl flex flex-col w-full max-w-[650px] flex-1 aspect-square mx-auto md:mx-0">
                       {!game && <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/80 text-white font-bold rounded-lg">Cargando...</div>}
                       {(isFlipped ? [...RANKS].reverse() : RANKS).map((rank, rankIndex) => (
                         <div key={rank} className="flex flex-1 w-full aspect-[8/1]">
@@ -835,13 +848,21 @@
                             const squareId = `${file}${rank}`;
                             const esCasillaClara = (rankIndex + fileIndex) % 2 === 0;
                             const isActiva = casillaActiva === squareId || selectedSquare === squareId;
+                            
+                            const theme = BOARD_THEMES[themeIndex];
+                            let currentBg = esCasillaClara ? theme.light : theme.dark;
+                            if (selectedSquare === squareId) currentBg = '#fde047'; // Amarillo selección fuerte
+                            else if (isActiva) currentBg = '#fef9c3'; // Amarillo selección suave
+                            
+                            const textColor = esCasillaClara ? theme.dark : theme.light;
+
                             const piece = game ? game.get(squareId) : null;
                             const pieceImg = piece ? PIECES_WIKIPEDIA[piece.color][piece.type] : null;
                             return (
-                              <button key={squareId} onClick={() => handleSquareClick(file, rank)} className={`relative flex-1 aspect-square select-none transition-all duration-200 flex items-center justify-center ${esCasillaClara ? 'bg-[#ebecd0]' : 'bg-[#779556]'} ${isActiva ? 'ring-inset ring-2 ring-yellow-400 bg-yellow-100 z-10 scale-[1.02] shadow-sm' : ''} ${selectedSquare === squareId ? 'bg-yellow-300 ring-yellow-500' : ''}`}>
+                              <button key={squareId} onClick={() => handleSquareClick(file, rank)} style={{ backgroundColor: currentBg }} className={`relative flex-1 aspect-square select-none transition-all duration-200 flex items-center justify-center ${isActiva ? 'ring-inset ring-2 ring-yellow-400 z-10 scale-[1.02] shadow-sm' : ''} ${selectedSquare === squareId ? 'ring-inset ring-2 ring-yellow-500' : ''}`}>
                                 {pieceImg && <img src={pieceImg} alt="" className="w-[85%] h-[85%] object-contain drop-shadow-md pointer-events-none" />}
-                                {fileIndex === 0 && <span className={`absolute top-0.5 left-1 text-[8px] font-bold ${esCasillaClara ? 'text-[#779556]' : 'text-[#ebecd0]'}`}>{rank}</span>}
-                                {rankIndex === 7 && <span className={`absolute bottom-0.5 right-1 text-[8px] font-bold ${esCasillaClara ? 'text-[#779556]' : 'text-[#ebecd0]'}`}>{file}</span>}
+                                {fileIndex === 0 && <span style={{ color: textColor }} className="absolute top-0.5 left-1 text-[10px] md:text-xs font-bold">{rank}</span>}
+                                {rankIndex === 7 && <span style={{ color: textColor }} className="absolute bottom-0.5 right-1 text-[10px] md:text-xs font-bold">{file}</span>}
                               </button>
                             );
                           })}
@@ -850,18 +871,18 @@
                     </div>
 
                     {/* Panel Lateral (Integrado) */}
-                    <div className="w-full md:w-44 relative min-h-[250px] flex-shrink-0">
+                    <div className="w-full md:w-64 relative min-h-[300px] flex-shrink-0">
                       <div className="absolute inset-0 bg-slate-900 border-2 border-slate-700 rounded-xl shadow-2xl flex flex-col items-center justify-start overflow-hidden">
                          
                          {/* Nueva ubicación del Nombre de la Apertura / Estado */}
                          <div className="w-full bg-emerald-900/30 border-b border-emerald-500/20 py-2 px-2 text-center">
-                           <p className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest font-bold leading-tight min-h-[1.5rem] flex items-center justify-center">
+                           <p className="text-xs font-mono text-emerald-400 uppercase tracking-widest font-bold leading-tight min-h-[1.5rem] flex items-center justify-center">
                              {notaActual}
                            </p>
                          </div>
 
-                         <h4 className="text-[9px] text-slate-500 uppercase font-black mt-2 mb-1 border-b border-slate-800 w-full text-center pb-1">Secuencia</h4>
-                         <div className="w-full text-[10px] font-mono space-y-1 mb-2 bg-slate-800/50 p-1.5">
+                         <h4 className="text-xs text-slate-500 uppercase font-black mt-2 mb-1 border-b border-slate-800 w-full text-center pb-1">Secuencia</h4>
+                         <div className="w-full text-sm font-mono space-y-1 mb-2 bg-slate-800/50 p-1.5">
                            {Array.from({ length: 5 }).map((_, i) => {
                              const wIndex = i * 2; const bIndex = i * 2 + 1;
                              const history = game ? game.history() : [];
@@ -880,16 +901,16 @@
                          </div>
                          
                          <div className="w-full mt-1 pt-1 border-t border-slate-800 flex flex-col items-center overflow-y-auto flex-1 scroll-smooth no-scrollbar">
-                           <h4 className="text-[9px] text-emerald-500 uppercase font-black mb-2 text-center">Análisis</h4>
-                           <div className="w-full space-y-2 pb-2 px-1">
+                           <h4 className="text-xs text-emerald-500 uppercase font-black mb-2 text-center">Análisis</h4>
+                           <div className="w-full space-y-2 pb-2 px-2">
                              {(game ? game.history() : []).map((move, idx) => {
                                const isCorrect = move === aperturaSeleccionada.movesEngine[idx];
                                const comment = isCorrect ? (aperturaSeleccionada.comments[idx] || "Estándar.") : "Variante.";
                                const prefix = (idx % 2 === 0) ? `${Math.floor(idx / 2) + 1}.` : `${Math.floor(idx / 2) + 1}...`;
                                return (
-                                 <div key={idx} className={`flex flex-col bg-slate-800 p-2 rounded-lg border-l-2 shadow-sm ${isCorrect ? 'border-emerald-500' : 'border-rose-500'}`}>
-                                   <span className={`text-[10px] font-mono font-black ${isCorrect ? 'text-emerald-400' : 'text-rose-400'}`}>{prefix} {move}</span>
-                                   <span className="text-[9px] text-slate-300 leading-tight italic">{comment}</span>
+                                 <div key={idx} className={`flex flex-col bg-slate-800 p-3 rounded-lg border-l-2 shadow-sm ${isCorrect ? 'border-emerald-500' : 'border-rose-500'}`}>
+                                   <span className={`text-sm font-mono font-black ${isCorrect ? 'text-emerald-400' : 'text-rose-400'}`}>{prefix} {move}</span>
+                                   <span className="text-xs text-slate-300 leading-snug italic mt-1">{comment}</span>
                                  </div>
                                );
                              })}
