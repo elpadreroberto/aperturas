@@ -15,7 +15,7 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useRef, useEffect } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-        import { Volume2, VolumeX, BookOpen, ChevronDown, ChevronUp, Play, RefreshCw, ArrowUpDown, Undo2, StepForward, FastForward, Palette, PanelBottom, Wind, Bell, Gamepad2, Zap, Activity, Music } from 'https://esm.sh/lucide-react@0.292.0';
+        import { Volume2, VolumeX, BookOpen, ChevronDown, ChevronUp, Play, RefreshCw, ArrowUpDown, Undo2, StepForward, FastForward, Palette, PanelBottom, Wind, Bell, Gamepad2, Zap, Activity, Music, Bot, GraduationCap } from 'https://esm.sh/lucide-react@0.292.0';
 
         // Mapeo de frecuencias para la escala (A4 a A5)
         const FRECUENCIAS = {
@@ -526,6 +526,12 @@
           const audioCtxRef = useRef(null);
           const analysisEndRef = useRef(null); 
           
+          // -- ESTADO Y REFS PARA STOCKFISH --
+          const engineRef = useRef(null);
+          const [isStockfishThinking, setIsStockfishThinking] = useState(false);
+          const [stockfishLevel, setStockfishLevel] = useState(0); // 0: Off, 1: Easy, 2: Medium, 3: Hard
+          const [showStockfishMenu, setShowStockfishMenu] = useState(false);
+          
           const [casillaActiva, setCasillaActiva] = useState(null);
           const [notaActual, setNotaActual] = useState('Esperando tu jugada...'); 
           
@@ -547,6 +553,32 @@
           const [selectedSquare, setSelectedSquare] = useState(null);
           const [boardUpdate, setBoardUpdate] = useState(0);
 
+          const [showQuizMenu, setShowQuizMenu] = useState(false);
+          const [quizState, setQuizState] = useState({ active: false, options: [], correct: null, guessed: [] });
+
+          // Cerrar menús al hacer clic fuera
+          useEffect(() => {
+            const handleClickOutside = (event) => {
+              if (!event.target.closest('.menu-container')) {
+                setShowAbiertas(false);
+                setShowSemiabiertas(false);
+                setShowCerradas(false);
+                setShowSemicerradas(false);
+                setShowStockfishMenu(false);
+                setShowQuizMenu(false);
+              }
+            };
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+          }, []);
+
+          // Refs para acceder a los valores actualizados de los settings de audio dentro del Web Worker de Stockfish
+          const isMutedRef = useRef(isMuted);
+          useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+
+          const instrumentIndexRef = useRef(instrumentIndex);
+          useEffect(() => { instrumentIndexRef.current = instrumentIndex; }, [instrumentIndex]);
+
           useEffect(() => {
             import('https://esm.sh/chess.js@1.0.0-beta.8').then(({ Chess }) => {
               setGame(new Chess());
@@ -555,6 +587,73 @@
             const timer = setTimeout(() => setShowTitle(false), 3000);
             return () => clearTimeout(timer);
           }, []);
+
+          // Inicializar Worker de Stockfish
+          useEffect(() => {
+            const fetchStockfish = async () => {
+              try {
+                const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
+                const text = await response.text();
+                const blob = new Blob([text], { type: 'application/javascript' });
+                const workerUrl = URL.createObjectURL(blob);
+                engineRef.current = new Worker(workerUrl);
+                engineRef.current.postMessage('uci');
+                
+                engineRef.current.onmessage = function(event) {
+                  const line = event.data;
+                  if (line.startsWith('bestmove')) {
+                    const match = line.match(/^bestmove ([a-h][1-8][a-h][1-8][qrbn]?)/);
+                    if (match) {
+                      window.dispatchEvent(new CustomEvent('stockfishMove', { detail: match[1] }));
+                    } else {
+                      window.dispatchEvent(new CustomEvent('stockfishMove', { detail: null }));
+                    }
+                  }
+                };
+              } catch (error) {
+                console.error("Error cargando Stockfish:", error);
+              }
+            };
+            fetchStockfish();
+            
+            return () => {
+              if (engineRef.current) engineRef.current.terminate();
+            };
+          }, []);
+
+          // Escuchar los movimientos de Stockfish
+          useEffect(() => {
+            const handleStockfishMove = (e) => {
+              setIsStockfishThinking(false);
+              const uciMove = e.detail;
+              if (!uciMove || !game) return;
+              
+              const from = uciMove.substring(0, 2);
+              const to = uciMove.substring(2, 4);
+              const promotion = uciMove.length === 5 ? uciMove[4] : undefined;
+              
+              const move = game.move({ from, to, promotion });
+              if (move) {
+                setBoardUpdate(prev => prev + 1);
+                
+                const ctx = initAudio();
+                const tiempoActual = ctx.currentTime;
+                const duracion = 0.4;
+                
+                setCasillaActiva(move.to);
+                setNotaActual(`Stockfish: ${move.san}`);
+                
+                if (!isMutedRef.current) {
+                  playTone(ctx, FRECUENCIAS[from[0]], tiempoActual, duracion, INSTRUMENT_TYPES[instrumentIndexRef.current]);
+                  playTone(ctx, FRECUENCIAS[to[1]], tiempoActual + duracion, duracion, INSTRUMENT_TYPES[instrumentIndexRef.current]);
+                }
+                setTimeout(() => setCasillaActiva(null), duracion * 2 * 1000);
+              }
+            };
+            
+            window.addEventListener('stockfishMove', handleStockfishMove);
+            return () => window.removeEventListener('stockfishMove', handleStockfishMove);
+          }, [game]);
 
           useEffect(() => {
             if (analysisEndRef.current) {
@@ -603,19 +702,96 @@
             osc.stop(startTime + duration);
           };
 
+          const playStockfishTurn = (level) => {
+            if (!engineRef.current || !game) return;
+            
+            setIsStockfishThinking(true);
+
+            // --- LÓGICA DE LIBRO DE APERTURAS ---
+            // Comprobamos si la partida sigue exactamente la línea de la apertura seleccionada
+            const history = game.history();
+            let isOnBook = true;
+            for (let i = 0; i < history.length; i++) {
+              if (history[i] !== aperturaSeleccionada.movesEngine[i]) {
+                isOnBook = false;
+                break;
+              }
+            }
+
+            // Si estamos en el libro y aún quedan jugadas en la secuencia
+            if (isOnBook && history.length < aperturaSeleccionada.movesEngine.length) {
+              const nextMoveSan = aperturaSeleccionada.movesEngine[history.length];
+              try {
+                // Hacemos la jugada temporalmente para extraer las casillas de origen y destino
+                const tempMove = game.move(nextMoveSan);
+                if (tempMove) {
+                  game.undo(); // Deshacemos al instante para no romper el estado
+                  const uciMove = tempMove.from + tempMove.to + (tempMove.promotion || '');
+                  
+                  // Simulamos que Stockfish calculó la jugada tras un pequeño retraso natural
+                  setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('stockfishMove', { detail: uciMove }));
+                  }, 600);
+                  return; // Salimos para NO llamar al motor
+                }
+              } catch (e) {
+                console.error("Error al forzar la jugada de apertura", e);
+              }
+            }
+            // ------------------------------------
+
+            let depth = 1; let skill = 0;
+            if (level === 1) { depth = 2; skill = 0; }
+            else if (level === 2) { depth = 5; skill = 10; }
+            else if (level === 3) { depth = 12; skill = 20; }
+
+            engineRef.current.postMessage(`setoption name Skill Level value ${skill}`);
+            engineRef.current.postMessage(`position fen ${game.fen()}`);
+            engineRef.current.postMessage(`go depth ${depth}`);
+          };
+
           const handleInstrumentChange = () => {
             const nextIndex = (instrumentIndex + 1) % INSTRUMENT_TYPES.length;
             setInstrumentIndex(nextIndex);
             
             if (!isMuted) {
                 const ctx = initAudio();
-                // Reproduce una nota 'La' (440Hz) de muestra
                 playTone(ctx, FRECUENCIAS['a'], ctx.currentTime, 0.4, INSTRUMENT_TYPES[nextIndex]);
             }
           };
 
-          const reproducirApertura = async () => {
-            if (!game || isPlaying) return;
+          const startQuiz = (type) => {
+            if (isPlaying || isStockfishThinking) return;
+            let pool = [];
+            if (type === '2' || type === '4') {
+              const count = parseInt(type);
+              const shuffled = [...OPENINGS_DB].sort(() => 0.5 - Math.random());
+              pool = shuffled.slice(0, count);
+            } else {
+              pool = OPENINGS_DB.filter(o => o.category === type);
+            }
+
+            const correct = pool[Math.floor(Math.random() * pool.length)];
+            setQuizState({ active: true, options: pool, correct: correct, guessed: [] });
+            setAperturaSeleccionada(correct);
+            setShowQuizMenu(false);
+            
+            setTimeout(() => reproducirApertura(null, correct, true), 100);
+          };
+
+          const handleQuizGuess = (op) => {
+             if (op.id === quizState.correct.id) {
+                 setNotaActual(`¡Correcto! ${op.name}`);
+                 setQuizState({ ...quizState, active: false });
+             } else {
+                 setNotaActual('Incorrecto, intenta de nuevo');
+                 setQuizState({ ...quizState, guessed: [...quizState.guessed, op.id] });
+             }
+          };
+
+          const reproducirApertura = async (e = null, overrideOpening = null, isQuiz = false) => {
+            if (!game || isPlaying || isStockfishThinking) return;
+            const opToPlay = overrideOpening || aperturaSeleccionada;
             setIsPlaying(true);
             game.reset();
             setBoardUpdate(prev => prev + 1);
@@ -624,18 +800,18 @@
             const ctx = initAudio();
             const duracion = 0.4;
 
-            for (let moveStr of aperturaSeleccionada.movesEngine) {
+            for (let moveStr of opToPlay.movesEngine) {
               const move = game.move(moveStr);
               if (move) {
                 setBoardUpdate(prev => prev + 1);
                 const file = move.to[0];
                 const rank = move.to[1];
                 setCasillaActiva(move.to);
-                setNotaActual(`${aperturaSeleccionada.name}`);
+                setNotaActual(isQuiz ? 'Apertura Oculta (?)' : `${opToPlay.name}`);
                 const tiempoActual = ctx.currentTime;
-                if (!isMuted) {
-                  playTone(ctx, FRECUENCIAS[file], tiempoActual, duracion, INSTRUMENT_TYPES[instrumentIndex]);
-                  playTone(ctx, FRECUENCIAS[rank], tiempoActual + duracion, duracion, INSTRUMENT_TYPES[instrumentIndex]);
+                if (!isMutedRef.current) {
+                  playTone(ctx, FRECUENCIAS[file], tiempoActual, duracion, INSTRUMENT_TYPES[instrumentIndexRef.current]);
+                  playTone(ctx, FRECUENCIAS[rank], tiempoActual + duracion, duracion, INSTRUMENT_TYPES[instrumentIndexRef.current]);
                 }
                 await new Promise(resolve => setTimeout(resolve, 1500));
               }
@@ -646,6 +822,11 @@
 
           const resetBoard = () => {
             if (game) {
+              if (engineRef.current && isStockfishThinking) {
+                engineRef.current.postMessage('stop');
+                setIsStockfishThinking(false);
+              }
+              if (quizState.active) setQuizState({ ...quizState, active: false });
               game.reset();
               setBoardUpdate(prev => prev + 1);
               setSelectedSquare(null);
@@ -657,6 +838,11 @@
 
           const undoMove = () => {
             if (game && !isPlaying) {
+              if (engineRef.current && isStockfishThinking) {
+                engineRef.current.postMessage('stop');
+                setIsStockfishThinking(false);
+              }
+              if (quizState.active) setQuizState({ ...quizState, active: false });
               const move = game.undo();
               if (move) {
                 setBoardUpdate(prev => prev + 1);
@@ -670,7 +856,7 @@
           const toggleOrientation = () => setIsFlipped(!isFlipped);
 
           const stepForward = () => {
-            if (!game || isPlaying) return;
+            if (!game || isPlaying || isStockfishThinking) return;
             const nextMoveIndex = game.history().length;
             if (nextMoveIndex < aperturaSeleccionada.movesEngine.length) {
               try {
@@ -697,7 +883,7 @@
           };
 
           const stepForwardTwo = async () => {
-            if (!game || isPlaying) return;
+            if (!game || isPlaying || isStockfishThinking) return;
             setIsPlaying(true);
             const ctx = initAudio();
             const duracion = 0.4;
@@ -734,11 +920,13 @@
           };
 
           const handleSquareClick = (file, rank) => {
-            if (isPlaying) return;
+            if (isPlaying || isStockfishThinking) return;
             const ctx = initAudio();
             const tiempoActual = ctx.currentTime;
             const duracion = 0.4;
             const squareId = `${file}${rank}`;
+            
+            let moveMade = false;
 
             if (game) {
               if (selectedSquare) {
@@ -747,6 +935,7 @@
                   if (move) {
                     setBoardUpdate(prev => prev + 1);
                     setSelectedSquare(null);
+                    moveMade = true;
                   } else {
                     const piece = game.get(squareId);
                     if (piece && piece.color === game.turn()) setSelectedSquare(squareId);
@@ -772,6 +961,11 @@
               playTone(ctx, freq2, tiempoActual + duracion, duracion, INSTRUMENT_TYPES[instrumentIndex]);
             }
             setTimeout(() => setCasillaActiva(null), duracion * 2 * 1000);
+
+            // Activar Stockfish automáticamente al completar una jugada
+            if (moveMade && stockfishLevel > 0 && !game.isGameOver()) {
+                setTimeout(() => playStockfishTurn(stockfishLevel), 500);
+            }
           };
 
           const selectOpening = (op) => {
@@ -780,7 +974,12 @@
             setShowSemiabiertas(false);
             setShowCerradas(false);
             setShowSemicerradas(false);
+            if (quizState.active) setQuizState({ ...quizState, active: false });
             if (game) {
+              if (engineRef.current && isStockfishThinking) {
+                engineRef.current.postMessage('stop');
+                setIsStockfishThinking(false);
+              }
               game.reset();
               setBoardUpdate(prev => prev + 1);
               setNotaActual(`${op.name}`);
@@ -811,7 +1010,7 @@
                   
                   {/* Clasificación Técnica */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 w-full">
-                    <div className="relative">
+                    <div className="relative menu-container">
                       <button onClick={() => toggleMenu(setShowAbiertas, showAbiertas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showAbiertas ? 'bg-blue-600 border-blue-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
                         <BookOpen size={16} className={showAbiertas ? 'text-white' : 'text-blue-400'} /> ABIERTAS
                       </button>
@@ -825,7 +1024,7 @@
                       )}
                     </div>
 
-                    <div className="relative">
+                    <div className="relative menu-container">
                       <button onClick={() => toggleMenu(setShowSemiabiertas, showSemiabiertas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showSemiabiertas ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
                         <BookOpen size={16} className={showSemiabiertas ? 'text-white' : 'text-indigo-400'} /> SEMIABIERTAS
                       </button>
@@ -839,7 +1038,7 @@
                       )}
                     </div>
 
-                    <div className="relative">
+                    <div className="relative menu-container">
                       <button onClick={() => toggleMenu(setShowCerradas, showCerradas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showCerradas ? 'bg-amber-600 border-amber-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
                         <BookOpen size={16} className={showCerradas ? 'text-white' : 'text-amber-400'} /> CERRADAS
                       </button>
@@ -853,7 +1052,7 @@
                       )}
                     </div>
 
-                    <div className="relative">
+                    <div className="relative menu-container">
                       <button onClick={() => toggleMenu(setShowSemicerradas, showSemicerradas)} className={`flex items-center justify-center gap-2 w-full h-10 rounded-xl text-xs font-black transition-all border-2 ${showSemicerradas ? 'bg-green-600 border-green-400 text-white' : 'bg-slate-700 border-slate-600'}`}>
                         <BookOpen size={16} className={showSemicerradas ? 'text-white' : 'text-green-400'} /> SEMICERRADAS
                       </button>
@@ -870,49 +1069,83 @@
 
                   {/* Controles Principales */}
                   <div className="flex items-center justify-center gap-2 w-full max-w-[600px]">
-                    {/* Cambiar Color Tablero (Movido a la izquierda) */}
                     <button onClick={() => setThemeIndex((prev) => (prev + 1) % BOARD_THEMES.length)} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md" title="Cambiar color del tablero">
                       <Palette size={18} className="text-sky-400" />
                     </button>
 
-                    {/* Silencio */}
+                    {/* Stockfish Bot Menu */}
+                    <div className="relative menu-container">
+                      <button onClick={() => setShowStockfishMenu(!showStockfishMenu)} disabled={isPlaying || isStockfishThinking} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${stockfishLevel > 0 ? 'bg-orange-600 hover:bg-orange-500 border-orange-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title="Jugar contra la IA">
+                        <Bot size={18} className={stockfishLevel > 0 ? "text-white" : "text-orange-400"} />
+                      </button>
+                      {showStockfishMenu && (
+                        <div className="absolute top-12 left-0 md:left-auto bg-slate-900 border-2 border-orange-500 rounded-xl p-2 w-48 shadow-2xl z-50 flex flex-col gap-1">
+                          <p className="text-sm text-orange-400 uppercase font-bold px-2 py-1 border-b border-slate-800">Bot Stockfish</p>
+                          <button onClick={() => { setStockfishLevel(0); setShowStockfishMenu(false); }} className={`text-left px-4 py-2 text-sm rounded-lg hover:bg-orange-900/40 ${stockfishLevel === 0 ? 'text-orange-400 font-bold' : 'text-slate-300'}`}>Apagado</button>
+                          <button onClick={() => { setStockfishLevel(1); setShowStockfishMenu(false); }} className={`text-left px-4 py-2 text-sm rounded-lg hover:bg-orange-900/40 ${stockfishLevel === 1 ? 'text-orange-400 font-bold' : 'text-slate-300'}`}>Nivel 1 (Fácil)</button>
+                          <button onClick={() => { setStockfishLevel(2); setShowStockfishMenu(false); }} className={`text-left px-4 py-2 text-sm rounded-lg hover:bg-orange-900/40 ${stockfishLevel === 2 ? 'text-orange-400 font-bold' : 'text-slate-300'}`}>Nivel 2 (Medio)</button>
+                          <button onClick={() => { setStockfishLevel(3); setShowStockfishMenu(false); }} className={`text-left px-4 py-2 text-sm rounded-lg hover:bg-orange-900/40 ${stockfishLevel === 3 ? 'text-orange-400 font-bold' : 'text-slate-300'}`}>Nivel 3 (Difícil)</button>
+                          <button onClick={() => { 
+                            setShowStockfishMenu(false); 
+                            if(game && !game.isGameOver()) playStockfishTurn(stockfishLevel > 0 ? stockfishLevel : 2); 
+                          }} className="text-left px-4 py-2 text-sm rounded-lg text-emerald-400 font-bold hover:bg-emerald-900/40 border-t border-slate-800 mt-1">
+                            Forzar Jugada
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botón Modo Examen (Quiz) */}
+                    <div className="relative menu-container">
+                      <button onClick={() => setShowQuizMenu(!showQuizMenu)} disabled={isPlaying || isStockfishThinking} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${quizState.active ? 'bg-violet-600 border-violet-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title="Modo Examen">
+                        <GraduationCap size={18} className={quizState.active ? "text-white" : "text-violet-400"} />
+                      </button>
+                      {showQuizMenu && (
+                        <div className="absolute top-12 right-0 md:left-auto bg-slate-900 border-2 border-violet-500 rounded-xl p-2 w-56 shadow-2xl z-50 flex flex-col gap-1">
+                          <p className="text-sm text-violet-400 uppercase font-bold px-2 py-1 border-b border-slate-800">Modo Examen</p>
+                          <button onClick={() => startQuiz('2')} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-violet-900/40 text-slate-200">2 al azar</button>
+                          <button onClick={() => startQuiz('4')} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-violet-900/40 text-slate-200">4 al azar</button>
+                          <div className="border-t border-slate-800 my-1"></div>
+                          <button onClick={() => startQuiz('abierta')} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-violet-900/40 text-slate-200">Todas (Abiertas)</button>
+                          <button onClick={() => startQuiz('semiabierta')} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-violet-900/40 text-slate-200">Todas (Semiabiertas)</button>
+                          <button onClick={() => startQuiz('cerrada')} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-violet-900/40 text-slate-200">Todas (Cerradas)</button>
+                          <button onClick={() => startQuiz('semicerrada')} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-violet-900/40 text-slate-200">Todas (Semicerradas)</button>
+                        </div>
+                      )}
+                    </div>
+
                     <button onClick={() => setIsMuted(!isMuted)} disabled={isPlaying} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${isMuted ? 'bg-rose-600 hover:bg-rose-500 border-rose-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title={isMuted ? "Activar Sonido" : "Silenciar"}>
                       {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
                     </button>
 
-                    {/* Reiniciar */}
-                    <button onClick={resetBoard} disabled={isPlaying} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white disabled:text-slate-500 shadow-md">
+                    <button onClick={resetBoard} disabled={isPlaying || isStockfishThinking} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white disabled:text-slate-500 shadow-md">
                       <RefreshCw size={18} />
                     </button>
 
-                    {/* Grupo Playback */}
                     <div className="flex items-center flex-1 h-10 rounded-xl overflow-hidden border-2 border-slate-600 shadow-lg bg-slate-700 max-w-[360px]">
-                      <button onClick={undoMove} disabled={isPlaying} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-r border-slate-600 text-white disabled:text-slate-500">
+                      <button onClick={undoMove} disabled={isPlaying || isStockfishThinking} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-r border-slate-600 text-white disabled:text-slate-500">
                         <Undo2 size={18} />
                       </button>
-                      <button onClick={reproducirApertura} disabled={isPlaying} className="flex-[2] h-full flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-tighter disabled:bg-slate-600 disabled:text-slate-400 px-1">
+                      <button onClick={(e) => reproducirApertura(e, null, false)} disabled={isPlaying || isStockfishThinking} className="flex-[2] h-full flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-tighter disabled:bg-slate-600 disabled:text-slate-400 px-1">
                         <Play size={16} className={isPlaying ? "text-slate-400 animate-pulse" : "text-yellow-400"} /> 
                         <span className="hidden sm:inline">{isPlaying ? 'Tocando' : 'Reproducir'}</span>
                       </button>
-                      <button onClick={stepForward} disabled={isPlaying} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500" title="Avanzar 1 jugada">
+                      <button onClick={stepForward} disabled={isPlaying || isStockfishThinking} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500" title="Avanzar 1 jugada">
                         <StepForward size={18} />
                       </button>
-                      <button onClick={stepForwardTwo} disabled={isPlaying} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500" title="Avanzar 2 jugadas">
+                      <button onClick={stepForwardTwo} disabled={isPlaying || isStockfishThinking} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500" title="Avanzar 2 jugadas">
                         <FastForward size={18} />
                       </button>
                     </div>
 
-                    {/* Girar Tablero */}
                     <button onClick={toggleOrientation} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md">
                       <ArrowUpDown size={18} className="text-emerald-400" />
                     </button>
 
-                    {/* Cambiar Layout */}
                     <button onClick={() => setIsPanelBelow(!isPanelBelow)} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md" title="Mover panel abajo">
                       <PanelBottom size={18} className="text-purple-400" />
                     </button>
 
-                    {/* Cambiar Sonido */}
                     <button onClick={handleInstrumentChange} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md" title={`Sonido: ${INSTRUMENT_NAMES[instrumentIndex]}`}>
                       {(() => {
                         const Icon = INSTRUMENT_ICONS[instrumentIndex];
@@ -922,9 +1155,9 @@
                   </div>
                 </div>
 
-                {/* Tablero y Análisis */}
                 <div className="flex flex-col items-center justify-center w-full gap-4">
                   <div className={`flex flex-col ${isPanelBelow ? '' : 'md:flex-row'} items-stretch justify-center gap-4 w-full`}>
+                    
                     {/* Tablero */}
                     <div className={`relative border-[4px] border-slate-700 rounded-lg shadow-2xl flex flex-col w-full ${isPanelBelow ? 'max-w-[850px] mx-auto' : 'max-w-[650px] mx-auto md:mx-0'} flex-1 aspect-square`}>
                       {!game && <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/80 text-white font-bold rounded-lg">Cargando...</div>}
@@ -937,8 +1170,8 @@
                             
                             const theme = BOARD_THEMES[themeIndex];
                             let currentBg = esCasillaClara ? theme.light : theme.dark;
-                            if (selectedSquare === squareId) currentBg = '#fde047'; // Amarillo selección fuerte
-                            else if (isActiva) currentBg = '#fef9c3'; // Amarillo selección suave
+                            if (selectedSquare === squareId) currentBg = '#fde047'; 
+                            else if (isActiva) currentBg = '#fef9c3'; 
                             
                             const textColor = esCasillaClara ? theme.dark : theme.light;
 
@@ -956,53 +1189,78 @@
                       ))}
                     </div>
 
-                    {/* Panel Lateral (Integrado) */}
+                    {/* Panel Lateral */}
                     <div className={`w-full ${isPanelBelow ? 'max-w-[850px] mx-auto' : 'md:w-64'} relative min-h-[300px] flex-shrink-0`}>
                       <div className="absolute inset-0 bg-slate-900 border-2 border-slate-700 rounded-xl shadow-2xl flex flex-col items-center justify-start overflow-hidden">
-                         
-                         {/* Nueva ubicación del Nombre de la Apertura / Estado */}
+                          
                          <div className="w-full bg-emerald-900/30 border-b border-emerald-500/20 py-2 px-2 text-center">
                            <p className="text-xs font-mono text-emerald-400 uppercase tracking-widest font-bold leading-tight min-h-[1.5rem] flex items-center justify-center">
                              {notaActual}
                            </p>
                          </div>
 
-                         <h4 className="text-xs text-slate-500 uppercase font-black mt-2 mb-1 border-b border-slate-800 w-full text-center pb-1">Secuencia</h4>
-                         <div className="w-full text-sm font-mono space-y-1 mb-2 bg-slate-800/50 p-1.5">
-                           {Array.from({ length: 5 }).map((_, i) => {
-                             const wIndex = i * 2; const bIndex = i * 2 + 1;
-                             const history = game ? game.history() : [];
-                             const expectedW = aperturaSeleccionada.movesEngine[wIndex];
-                             const expectedB = aperturaSeleccionada.movesEngine[bIndex];
-                             const isWCorrect = history.length > wIndex && history.slice(0, wIndex + 1).every((m, idx) => m === aperturaSeleccionada.movesEngine[idx]);
-                             const isBCorrect = history.length > bIndex && history.slice(0, bIndex + 1).every((m, idx) => m === aperturaSeleccionada.movesEngine[idx]);
-                             return (
-                               <div key={i} className="flex justify-between w-full border-b border-slate-700/30 pb-0.5 last:border-0 px-1">
-                                 <span className="text-slate-600 font-bold">{i + 1}.</span>
-                                 <span className={`w-8 text-center ${isWCorrect ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>{expectedW || '-'}</span>
-                                 <span className={`w-8 text-center ${isBCorrect ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>{expectedB || '-'}</span>
+                         {quizState.active ? (
+                           <div className="w-full flex flex-col items-center justify-start p-4 flex-1">
+                               <h4 className="text-sm text-violet-400 uppercase font-black mb-4 text-center">¿Qué apertura es?</h4>
+                               <div className="w-full flex flex-col gap-2">
+                                   {quizState.options.map(op => {
+                                       const isGuessedWrong = quizState.guessed.includes(op.id);
+                                       return (
+                                           <button 
+                                               key={op.id}
+                                               onClick={() => handleQuizGuess(op)}
+                                               disabled={isGuessedWrong}
+                                               className={`w-full py-3 px-4 rounded-xl font-bold text-sm transition-all border-2 ${isGuessedWrong ? 'bg-rose-900/50 border-rose-800 text-rose-300 opacity-50 cursor-not-allowed' : 'bg-slate-800 border-slate-600 hover:border-violet-500 hover:bg-slate-700 text-white shadow-md'}`}
+                                           >
+                                               {op.name}
+                                           </button>
+                                       );
+                                   })}
                                </div>
-                             );
-                           })}
-                         </div>
-                         
-                         <div className="w-full mt-1 pt-1 border-t border-slate-800 flex flex-col items-center overflow-y-auto flex-1 scroll-smooth no-scrollbar">
-                           <h4 className="text-xs text-emerald-500 uppercase font-black mb-2 text-center">Análisis</h4>
-                           <div className="w-full space-y-2 pb-2 px-2">
-                             {(game ? game.history() : []).map((move, idx) => {
-                               const isCorrect = move === aperturaSeleccionada.movesEngine[idx];
-                               const comment = isCorrect ? (aperturaSeleccionada.comments[idx] || "Estándar.") : "Variante.";
-                               const prefix = (idx % 2 === 0) ? `${Math.floor(idx / 2) + 1}.` : `${Math.floor(idx / 2) + 1}...`;
-                               return (
-                                 <div key={idx} className={`flex flex-col bg-slate-800 p-3 rounded-lg border-l-2 shadow-sm ${isCorrect ? 'border-emerald-500' : 'border-rose-500'}`}>
-                                   <span className={`text-sm font-mono font-black ${isCorrect ? 'text-emerald-400' : 'text-rose-400'}`}>{prefix} {move}</span>
-                                   <span className="text-xs text-slate-300 leading-snug italic mt-1">{comment}</span>
-                                 </div>
-                               );
-                             })}
-                             <div ref={analysisEndRef} />
+                               <button onClick={() => setQuizState({ ...quizState, active: false })} className="mt-4 text-xs text-slate-500 hover:text-white underline py-2">
+                                   Cancelar Examen
+                               </button>
                            </div>
-                         </div>
+                         ) : (
+                           <>
+                             <h4 className="text-xs text-slate-500 uppercase font-black mt-2 mb-1 border-b border-slate-800 w-full text-center pb-1">Secuencia</h4>
+                             <div className="w-full text-sm font-mono space-y-1 mb-2 bg-slate-800/50 p-1.5">
+                               {Array.from({ length: 5 }).map((_, i) => {
+                                 const wIndex = i * 2; const bIndex = i * 2 + 1;
+                                 const history = game ? game.history() : [];
+                                 const expectedW = aperturaSeleccionada.movesEngine[wIndex];
+                                 const expectedB = aperturaSeleccionada.movesEngine[bIndex];
+                                 const isWCorrect = history.length > wIndex && history.slice(0, wIndex + 1).every((m, idx) => m === aperturaSeleccionada.movesEngine[idx]);
+                                 const isBCorrect = history.length > bIndex && history.slice(0, bIndex + 1).every((m, idx) => m === aperturaSeleccionada.movesEngine[idx]);
+                                 return (
+                                   <div key={i} className="flex justify-between w-full border-b border-slate-700/30 pb-0.5 last:border-0 px-1">
+                                     <span className="text-slate-600 font-bold">{i + 1}.</span>
+                                     <span className={`w-8 text-center ${isWCorrect ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>{expectedW || '-'}</span>
+                                     <span className={`w-8 text-center ${isBCorrect ? 'text-emerald-400 font-bold' : 'text-slate-500'}`}>{expectedB || '-'}</span>
+                                   </div>
+                                 );
+                               })}
+                             </div>
+                             
+                             <div className="w-full mt-1 pt-1 border-t border-slate-800 flex flex-col items-center overflow-y-auto flex-1 scroll-smooth no-scrollbar">
+                               <h4 className="text-xs text-emerald-500 uppercase font-black mb-2 text-center">Análisis</h4>
+                               <div className="w-full space-y-2 pb-2 px-2">
+                                 {(game ? game.history() : []).map((move, idx) => {
+                                   const isCorrect = move === aperturaSeleccionada.movesEngine[idx];
+                                   const comment = isCorrect ? (aperturaSeleccionada.comments[idx] || "Estándar.") : "Variante libre.";
+                                   const prefix = (idx % 2 === 0) ? `${Math.floor(idx / 2) + 1}.` : `${Math.floor(idx / 2) + 1}...`;
+                                   return (
+                                     <div key={idx} className={`flex flex-col bg-slate-800 p-3 rounded-lg border-l-2 shadow-sm ${isCorrect ? 'border-emerald-500' : 'border-rose-500'}`}>
+                                       <span className={`text-sm font-mono font-black ${isCorrect ? 'text-emerald-400' : 'text-rose-400'}`}>{prefix} {move}</span>
+                                       <span className="text-xs text-slate-300 leading-snug italic mt-1">{comment}</span>
+                                     </div>
+                                   );
+                                 })}
+                                 <div ref={analysisEndRef} />
+                               </div>
+                             </div>
+                           </>
+                         )}
                       </div>
                     </div>
                   </div>
