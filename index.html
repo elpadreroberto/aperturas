@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -15,7 +15,7 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useRef, useEffect } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-        import { Volume2, VolumeX, BookOpen, ChevronDown, ChevronUp, Play, RefreshCw, ArrowUpDown, Undo2, StepForward, Palette } from 'https://esm.sh/lucide-react@0.292.0';
+        import { Volume2, VolumeX, BookOpen, ChevronDown, ChevronUp, Play, RefreshCw, ArrowUpDown, Undo2, StepForward, FastForward, Palette, PanelBottom, Wind, Bell, Gamepad2, Zap, Activity, Music } from 'https://esm.sh/lucide-react@0.292.0';
 
         // Mapeo de frecuencias para la escala (A4 a A5)
         const FRECUENCIAS = {
@@ -58,6 +58,10 @@
           { light: '#f0d9b5', dark: '#b58863' }, // Madera Clásica
           { light: '#e2e8f0', dark: '#64748b' }  // Gris Pizarra
         ];
+
+        const INSTRUMENT_TYPES = ['sine', 'triangle', 'square', 'sawtooth', 'pluck', 'organ'];
+        const INSTRUMENT_NAMES = ['Flauta', 'Campana', 'Retro', 'Sintetizador', 'Cuerda Pulsada', 'Órgano'];
+        const INSTRUMENT_ICONS = [Wind, Bell, Gamepad2, Zap, Activity, Music];
 
         const OPENINGS_DB = [
           {
@@ -189,7 +193,7 @@
               "Ataca la cadena de peones blancos desde la base.",
               "Expulsa al caballo de d5, ganando aún más espacio.",
               "El caballo se retira a b6, apuntando a c4 y d5.",
-              "Cambio en el centro para definir la estructura de peones.",
+              "Cambio en el centro para definir la structure de peones.",
               "Captura simétrica. Posición asimétrica con chances para ambos."
             ]
           },
@@ -341,7 +345,7 @@
               "Las negras golpean inmediatamente el centro atacando d4.",
               "Sostiene el centro sólidamente y prepara el desarrollo del flanco de rey.",
               "Aumenta la presión sobre d4 y desarrolla otra pieza menor.",
-              "Refuerza la estructura piramidal de peones blancos en el centro.",
+              "Refuerza la structure piramidal de peones blancos en el centro.",
               "Desarrollo sólido que prepara la salida del alfil de casillas oscuras."
             ]
           },
@@ -437,7 +441,7 @@
               "Las blancas aceptan el reto y cambian peones en el centro.",
               "El caballo recaptura y se centraliza temporalmente.",
               "Toma el centro por completo, forzando al caballo a moverse.",
-              "Las negras cambian en c3 para desequilibrar la estructura de peones blancos."
+              "Las negras cambian en c3 para desequilibrar la structure de peones blancos."
             ]
           },
           {
@@ -454,7 +458,7 @@
               "Desarrollo natural y sólido del caballo de rey.",
               "Abre líneas para el alfil y prepara un esquema restringido pero dinámico.",
               "Jugada profiláctica, evita que el alfil negro salte a b4 de forma molesta.",
-              "Defiende y prepara una estructura de peones más cerrada.",
+              "Defiende y prepara una structure de peones más cerrada.",
               "Desarrolla el caballo de dama, aumentando la presión.",
               "Prepara el fianchetto para tener perspectivas a largo plazo en la gran diagonal."
             ]
@@ -471,7 +475,7 @@
               "Gana espacio en el flanco de dama y apoya el centro.",
               "¡El golpe Benoni! Ataca d4 directamente, buscando desequilibrio.",
               "Avanza el peón, ganando espacio y cerrando el centro temporalmente.",
-              "Presiona d5, forzando una decisión sobre la estructura central.",
+              "Presiona d5, forzando una decisión sobre la structure central.",
               "Desarrolla el caballo y mantiene el control central de forma natural.",
               "Cambio central, creando una mayoría asimétrica de peones para las blancas.",
               "Las blancas recapturan, consolidando su ventaja de espacio en el centro.",
@@ -523,7 +527,7 @@
           const analysisEndRef = useRef(null); 
           
           const [casillaActiva, setCasillaActiva] = useState(null);
-          const [notaActual, setNotaActual] = useState('Esperando jugada...'); 
+          const [notaActual, setNotaActual] = useState('Esperando tu jugada...'); 
           
           const [showAbiertas, setShowAbiertas] = useState(false);
           const [showSemiabiertas, setShowSemiabiertas] = useState(false);
@@ -536,6 +540,8 @@
           const [isFlipped, setIsFlipped] = useState(false);
           const [showTitle, setShowTitle] = useState(true);
           const [themeIndex, setThemeIndex] = useState(0);
+          const [instrumentIndex, setInstrumentIndex] = useState(0);
+          const [isPanelBelow, setIsPanelBelow] = useState(false);
           
           const [game, setGame] = useState(null);
           const [selectedSquare, setSelectedSquare] = useState(null);
@@ -566,19 +572,46 @@
             return audioCtxRef.current;
           };
 
-          const playTone = (ctx, freq, startTime, duration) => {
+          const playTone = (ctx, freq, startTime, duration, instType = 'sine') => {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
-            osc.type = 'sine';
+            
             osc.frequency.setValueAtTime(freq, startTime);
-            gain.gain.setValueAtTime(0, startTime);
-            gain.gain.linearRampToValueAtTime(0.3, startTime + 0.05);
-            gain.gain.setValueAtTime(0.3, startTime + duration - 0.1);
-            gain.gain.linearRampToValueAtTime(0, startTime + duration);
+            
+            if (instType === 'pluck') {
+                osc.type = 'triangle';
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(0.5, startTime + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+            } else if (instType === 'organ') {
+                osc.type = 'sine';
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(0.4, startTime + 0.01);
+                gain.gain.setValueAtTime(0.4, startTime + duration - 0.01);
+                gain.gain.linearRampToValueAtTime(0, startTime + duration);
+            } else {
+                osc.type = instType;
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(0.3, startTime + 0.05);
+                gain.gain.setValueAtTime(0.3, startTime + duration - 0.1);
+                gain.gain.linearRampToValueAtTime(0, startTime + duration);
+            }
+
             osc.connect(gain);
             gain.connect(ctx.destination);
             osc.start(startTime);
             osc.stop(startTime + duration);
+          };
+
+          const handleInstrumentChange = () => {
+            const nextIndex = (instrumentIndex + 1) % INSTRUMENT_TYPES.length;
+            setInstrumentIndex(nextIndex);
+            
+            if (!isMuted) {
+                const ctx = initAudio();
+                // Reproduce una nota 'La' (440Hz) de muestra
+                playTone(ctx, FRECUENCIAS['a'], ctx.currentTime, 0.4, INSTRUMENT_TYPES[nextIndex]);
+            }
           };
 
           const reproducirApertura = async () => {
@@ -601,8 +634,8 @@
                 setNotaActual(`${aperturaSeleccionada.name}`);
                 const tiempoActual = ctx.currentTime;
                 if (!isMuted) {
-                  playTone(ctx, FRECUENCIAS[file], tiempoActual, duracion);
-                  playTone(ctx, FRECUENCIAS[rank], tiempoActual + duracion, duracion);
+                  playTone(ctx, FRECUENCIAS[file], tiempoActual, duracion, INSTRUMENT_TYPES[instrumentIndex]);
+                  playTone(ctx, FRECUENCIAS[rank], tiempoActual + duracion, duracion, INSTRUMENT_TYPES[instrumentIndex]);
                 }
                 await new Promise(resolve => setTimeout(resolve, 1500));
               }
@@ -652,8 +685,8 @@
                   const tiempoActual = ctx.currentTime;
                   const duracion = 0.4;
                   if (!isMuted) {
-                    playTone(ctx, FRECUENCIAS[file], tiempoActual, duracion);
-                    playTone(ctx, FRECUENCIAS[rank], tiempoActual + duracion, duracion);
+                    playTone(ctx, FRECUENCIAS[file], tiempoActual, duracion, INSTRUMENT_TYPES[instrumentIndex]);
+                    playTone(ctx, FRECUENCIAS[rank], tiempoActual + duracion, duracion, INSTRUMENT_TYPES[instrumentIndex]);
                   }
                   setTimeout(() => setCasillaActiva(null), duracion * 2 * 1000);
                 }
@@ -661,6 +694,43 @@
                 setNotaActual('Variante detectada');
               }
             }
+          };
+
+          const stepForwardTwo = async () => {
+            if (!game || isPlaying) return;
+            setIsPlaying(true);
+            const ctx = initAudio();
+            const duracion = 0.4;
+
+            for (let i = 0; i < 2; i++) {
+              const nextMoveIndex = game.history().length;
+              if (nextMoveIndex < aperturaSeleccionada.movesEngine.length) {
+                try {
+                  const move = game.move(aperturaSeleccionada.movesEngine[nextMoveIndex]);
+                  if (move) {
+                    setBoardUpdate(prev => prev + 1);
+                    const file = move.to[0];
+                    const rank = move.to[1];
+                    setCasillaActiva(move.to);
+                    setNotaActual(`${aperturaSeleccionada.name}`);
+                    const tiempoActual = ctx.currentTime;
+                    if (!isMuted) {
+                      playTone(ctx, FRECUENCIAS[file], tiempoActual, duracion, INSTRUMENT_TYPES[instrumentIndex]);
+                      playTone(ctx, FRECUENCIAS[rank], tiempoActual + duracion, duracion, INSTRUMENT_TYPES[instrumentIndex]);
+                    }
+                    if (i === 0) {
+                      await new Promise(resolve => setTimeout(resolve, 1000));
+                    } else {
+                      setTimeout(() => setCasillaActiva(null), duracion * 2 * 1000);
+                    }
+                  }
+                } catch (e) {
+                  setNotaActual('Variante detectada');
+                  break;
+                }
+              }
+            }
+            setIsPlaying(false);
           };
 
           const handleSquareClick = (file, rank) => {
@@ -698,8 +768,8 @@
             setCasillaActiva(squareId);
             setNotaActual(isMuted ? squareId.toUpperCase() : `${squareId.toUpperCase()} | ${NOMBRES_NOTAS[file]}-${NOMBRES_NOTAS[rank]}`);
             if (!isMuted) {
-              playTone(ctx, freq1, tiempoActual, duracion);
-              playTone(ctx, freq2, tiempoActual + duracion, duracion);
+              playTone(ctx, freq1, tiempoActual, duracion, INSTRUMENT_TYPES[instrumentIndex]);
+              playTone(ctx, freq2, tiempoActual + duracion, duracion, INSTRUMENT_TYPES[instrumentIndex]);
             }
             setTimeout(() => setCasillaActiva(null), duracion * 2 * 1000);
           };
@@ -799,7 +869,12 @@
                   </div>
 
                   {/* Controles Principales */}
-                  <div className="flex items-center justify-center gap-2 w-full max-w-[550px]">
+                  <div className="flex items-center justify-center gap-2 w-full max-w-[600px]">
+                    {/* Cambiar Color Tablero (Movido a la izquierda) */}
+                    <button onClick={() => setThemeIndex((prev) => (prev + 1) % BOARD_THEMES.length)} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md" title="Cambiar color del tablero">
+                      <Palette size={18} className="text-sky-400" />
+                    </button>
+
                     {/* Silencio */}
                     <button onClick={() => setIsMuted(!isMuted)} disabled={isPlaying} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${isMuted ? 'bg-rose-600 hover:bg-rose-500 border-rose-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title={isMuted ? "Activar Sonido" : "Silenciar"}>
                       {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
@@ -811,16 +886,19 @@
                     </button>
 
                     {/* Grupo Playback */}
-                    <div className="flex items-center flex-1 h-10 rounded-xl overflow-hidden border-2 border-slate-600 shadow-lg bg-slate-700 max-w-[320px]">
+                    <div className="flex items-center flex-1 h-10 rounded-xl overflow-hidden border-2 border-slate-600 shadow-lg bg-slate-700 max-w-[360px]">
                       <button onClick={undoMove} disabled={isPlaying} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-r border-slate-600 text-white disabled:text-slate-500">
                         <Undo2 size={18} />
                       </button>
-                      <button onClick={reproducirApertura} disabled={isPlaying} className="flex-[2.5] h-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-tighter disabled:bg-slate-600 disabled:text-slate-400">
-                        <Play size={18} className={isPlaying ? "text-slate-400 animate-pulse" : "text-yellow-400"} /> 
-                        {isPlaying ? 'Tocando' : 'Reproducir'}
+                      <button onClick={reproducirApertura} disabled={isPlaying} className="flex-[2] h-full flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-tighter disabled:bg-slate-600 disabled:text-slate-400 px-1">
+                        <Play size={16} className={isPlaying ? "text-slate-400 animate-pulse" : "text-yellow-400"} /> 
+                        <span className="hidden sm:inline">{isPlaying ? 'Tocando' : 'Reproducir'}</span>
                       </button>
-                      <button onClick={stepForward} disabled={isPlaying} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500">
+                      <button onClick={stepForward} disabled={isPlaying} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500" title="Avanzar 1 jugada">
                         <StepForward size={18} />
+                      </button>
+                      <button onClick={stepForwardTwo} disabled={isPlaying} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500" title="Avanzar 2 jugadas">
+                        <FastForward size={18} />
                       </button>
                     </div>
 
@@ -829,18 +907,26 @@
                       <ArrowUpDown size={18} className="text-emerald-400" />
                     </button>
 
-                    {/* Cambiar Color Tablero */}
-                    <button onClick={() => setThemeIndex((prev) => (prev + 1) % BOARD_THEMES.length)} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md" title="Cambiar color del tablero">
-                      <Palette size={18} className="text-sky-400" />
+                    {/* Cambiar Layout */}
+                    <button onClick={() => setIsPanelBelow(!isPanelBelow)} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md" title="Mover panel abajo">
+                      <PanelBottom size={18} className="text-purple-400" />
+                    </button>
+
+                    {/* Cambiar Sonido */}
+                    <button onClick={handleInstrumentChange} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md" title={`Sonido: ${INSTRUMENT_NAMES[instrumentIndex]}`}>
+                      {(() => {
+                        const Icon = INSTRUMENT_ICONS[instrumentIndex];
+                        return <Icon size={18} className="text-pink-400" />;
+                      })()}
                     </button>
                   </div>
                 </div>
 
                 {/* Tablero y Análisis */}
                 <div className="flex flex-col items-center justify-center w-full gap-4">
-                  <div className="flex flex-col md:flex-row items-stretch justify-center gap-4 w-full">
+                  <div className={`flex flex-col ${isPanelBelow ? '' : 'md:flex-row'} items-stretch justify-center gap-4 w-full`}>
                     {/* Tablero */}
-                    <div className="relative border-[4px] border-slate-700 rounded-lg shadow-2xl flex flex-col w-full max-w-[650px] flex-1 aspect-square mx-auto md:mx-0">
+                    <div className={`relative border-[4px] border-slate-700 rounded-lg shadow-2xl flex flex-col w-full ${isPanelBelow ? 'max-w-[850px] mx-auto' : 'max-w-[650px] mx-auto md:mx-0'} flex-1 aspect-square`}>
                       {!game && <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/80 text-white font-bold rounded-lg">Cargando...</div>}
                       {(isFlipped ? [...RANKS].reverse() : RANKS).map((rank, rankIndex) => (
                         <div key={rank} className="flex flex-1 w-full aspect-[8/1]">
@@ -871,7 +957,7 @@
                     </div>
 
                     {/* Panel Lateral (Integrado) */}
-                    <div className="w-full md:w-64 relative min-h-[300px] flex-shrink-0">
+                    <div className={`w-full ${isPanelBelow ? 'max-w-[850px] mx-auto' : 'md:w-64'} relative min-h-[300px] flex-shrink-0`}>
                       <div className="absolute inset-0 bg-slate-900 border-2 border-slate-700 rounded-xl shadow-2xl flex flex-col items-center justify-start overflow-hidden">
                          
                          {/* Nueva ubicación del Nombre de la Apertura / Estado */}
