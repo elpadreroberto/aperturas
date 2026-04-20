@@ -15,7 +15,7 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useRef, useEffect } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-        import { Volume2, VolumeX, BookOpen, ChevronDown, ChevronUp, Play, RefreshCw, ArrowUpDown, Undo2, StepForward, FastForward, Palette, PanelBottom, Wind, Bell, Gamepad2, Zap, Activity, Music, Bot, GraduationCap } from 'https://esm.sh/lucide-react@0.292.0';
+        import { Volume2, VolumeX, BookOpen, ChevronDown, ChevronUp, Play, RefreshCw, ArrowUpDown, Undo2, StepForward, FastForward, Palette, PanelBottom, Wind, Bell, Gamepad2, Zap, Activity, Music, Bot, GraduationCap, Users } from 'https://esm.sh/lucide-react@0.292.0';
 
         // Mapeo de frecuencias para la escala (A4 a A5)
         const FRECUENCIAS = {
@@ -557,6 +557,15 @@
           const [quizState, setQuizState] = useState({ active: false, options: [], correct: null, guessed: [] });
           const [pendingPromotion, setPendingPromotion] = useState(null);
 
+          // -- ESTADOS PARA MODO 2 JUGADORES Y RELOJES --
+          const [isPvPMode, setIsPvPMode] = useState(false);
+          const [showPvPMenu, setShowPvPMenu] = useState(false);
+          const [timeControl, setTimeControl] = useState(null); // { base: segundos, inc: segundos }
+          const [whiteTime, setWhiteTime] = useState(0);
+          const [blackTime, setBlackTime] = useState(0);
+          const [timerActive, setTimerActive] = useState(false);
+          const [gameOverReason, setGameOverReason] = useState(null);
+
           // Cerrar menús al hacer clic fuera
           useEffect(() => {
             const handleClickOutside = (event) => {
@@ -567,11 +576,71 @@
                 setShowSemicerradas(false);
                 setShowStockfishMenu(false);
                 setShowQuizMenu(false);
+                setShowPvPMenu(false);
               }
             };
             document.addEventListener('mousedown', handleClickOutside);
             return () => document.removeEventListener('mousedown', handleClickOutside);
           }, []);
+
+          // Efecto del reloj
+          useEffect(() => {
+            let interval;
+            if (isPvPMode && timeControl && timerActive && !gameOverReason && !game?.isGameOver()) {
+                interval = setInterval(() => {
+                    if (game.turn() === 'w') {
+                        setWhiteTime(prev => {
+                            if (prev <= 1) { setGameOverReason("El tiempo de las Blancas se agotó. ¡Ganan las Negras!"); setTimerActive(false); return 0; }
+                            return prev - 1;
+                        });
+                    } else {
+                        setBlackTime(prev => {
+                            if (prev <= 1) { setGameOverReason("El tiempo de las Negras se agotó. ¡Ganan las Blancas!"); setTimerActive(false); return 0; }
+                            return prev - 1;
+                        });
+                    }
+                }, 1000);
+            }
+            return () => clearInterval(interval);
+          }, [isPvPMode, timeControl, timerActive, game, gameOverReason]);
+
+          const formatTime = (seconds) => {
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            return `${m}:${s.toString().padStart(2, '0')}`;
+          };
+
+          const startPvPMatch = (baseMinutes, incrementSeconds) => {
+            if (engineRef.current && isStockfishThinking) {
+                engineRef.current.postMessage('stop');
+                setIsStockfishThinking(false);
+            }
+            setStockfishLevel(0);
+            if (quizState.active) setQuizState({ ...quizState, active: false });
+            
+            game.reset();
+            setBoardUpdate(prev => prev + 1);
+            setPendingPromotion(null);
+            setSelectedSquare(null);
+            setCasillaActiva(null);
+            setIsPlaying(false);
+            
+            setIsPvPMode(true);
+            setShowPvPMenu(false);
+            setGameOverReason(null);
+            
+            if (baseMinutes === null) {
+                setTimeControl(null);
+                setTimerActive(false);
+                setNotaActual('Partida Libre (Sin Tiempo)');
+            } else {
+                setTimeControl({ base: baseMinutes * 60, inc: incrementSeconds });
+                setWhiteTime(baseMinutes * 60);
+                setBlackTime(baseMinutes * 60);
+                setTimerActive(false);
+                setNotaActual(`Partida: ${baseMinutes}+${incrementSeconds}`);
+            }
+          };
 
           // Refs para acceder a los valores actualizados de los settings de audio dentro del Web Worker de Stockfish
           const audioModeRef = useRef(audioMode);
@@ -664,10 +733,10 @@
           }, [game]);
 
           useEffect(() => {
-            if (analysisEndRef.current) {
+            if (analysisEndRef.current && !isPvPMode) {
               analysisEndRef.current.scrollIntoView({ behavior: 'smooth' });
             }
-          }, [boardUpdate]);
+          }, [boardUpdate, isPvPMode]);
 
           const initAudio = () => {
             if (!audioCtxRef.current) {
@@ -724,12 +793,11 @@
           };
 
           const playStockfishTurn = (level) => {
-            if (!engineRef.current || !game) return;
+            if (!engineRef.current || !game || isPvPMode) return;
             
             setIsStockfishThinking(true);
 
             // --- LÓGICA DE LIBRO DE APERTURAS ---
-            // Comprobamos si la partida sigue exactamente la línea de la apertura seleccionada
             const history = game.history();
             let isOnBook = true;
             for (let i = 0; i < history.length; i++) {
@@ -739,21 +807,18 @@
               }
             }
 
-            // Si estamos en el libro y aún quedan jugadas en la secuencia
             if (isOnBook && history.length < aperturaSeleccionada.movesEngine.length) {
               const nextMoveSan = aperturaSeleccionada.movesEngine[history.length];
               try {
-                // Hacemos la jugada temporalmente para extraer las casillas de origen y destino
                 const tempMove = game.move(nextMoveSan);
                 if (tempMove) {
-                  game.undo(); // Deshacemos al instante para no romper el estado
+                  game.undo();
                   const uciMove = tempMove.from + tempMove.to + (tempMove.promotion || '');
                   
-                  // Simulamos que Stockfish calculó la jugada tras un pequeño retraso natural
                   setTimeout(() => {
                     window.dispatchEvent(new CustomEvent('stockfishMove', { detail: uciMove }));
                   }, 600);
-                  return; // Salimos para NO llamar al motor
+                  return; 
                 }
               } catch (e) {
                 console.error("Error al forzar la jugada de apertura", e);
@@ -783,16 +848,30 @@
 
           const startQuiz = (type) => {
             if (isPlaying || isStockfishThinking) return;
+            setIsPvPMode(false);
+            
+            // Fisher-Yates shuffle robusto para evitar el sesgo de Javascript en sort()
+            const shuffleArray = (array) => {
+              const newArr = [...array];
+              for (let i = newArr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+              }
+              return newArr;
+            };
+
             let pool = [];
             if (type === '2' || type === '4') {
               const count = parseInt(type);
-              const shuffled = [...OPENINGS_DB].sort(() => 0.5 - Math.random());
-              pool = shuffled.slice(0, count);
+              pool = shuffleArray(OPENINGS_DB).slice(0, count);
             } else {
-              pool = OPENINGS_DB.filter(o => o.category === type);
+              // Mezcla las opciones para que los botones cambien de posición 
+              // en cada intento en el menú lateral.
+              pool = shuffleArray(OPENINGS_DB.filter(o => o.category === type));
             }
 
             const correct = pool[Math.floor(Math.random() * pool.length)];
+            
             setQuizState({ active: true, options: pool, correct: correct, guessed: [] });
             setAperturaSeleccionada(correct);
             setShowQuizMenu(false);
@@ -812,6 +891,7 @@
 
           const reproducirApertura = async (e = null, overrideOpening = null, isQuiz = false) => {
             if (!game || isPlaying || isStockfishThinking) return;
+            setIsPvPMode(false);
             setPendingPromotion(null);
             const opToPlay = overrideOpening || aperturaSeleccionada;
             setIsPlaying(true);
@@ -864,6 +944,13 @@
               setCasillaActiva(null);
               setIsPlaying(false);
               setNotaActual('Tablero reiniciado');
+
+              if (isPvPMode && timeControl) {
+                  setWhiteTime(timeControl.base);
+                  setBlackTime(timeControl.base);
+                  setTimerActive(false);
+                  setGameOverReason(null);
+              }
             }
           };
 
@@ -881,6 +968,10 @@
                 setSelectedSquare(null);
                 setCasillaActiva(null);
                 setNotaActual('Deshacer');
+
+                if (isPvPMode && timeControl && game.history().length <= 1) {
+                    setTimerActive(false);
+                }
               }
             }
           };
@@ -888,7 +979,7 @@
           const toggleOrientation = () => setIsFlipped(!isFlipped);
 
           const stepForward = () => {
-            if (!game || isPlaying || isStockfishThinking) return;
+            if (!game || isPlaying || isStockfishThinking || isPvPMode) return;
             const nextMoveIndex = game.history().length;
             if (nextMoveIndex < aperturaSeleccionada.movesEngine.length) {
               try {
@@ -923,7 +1014,7 @@
           };
 
           const stepForwardTwo = async () => {
-            if (!game || isPlaying || isStockfishThinking) return;
+            if (!game || isPlaying || isStockfishThinking || isPvPMode) return;
             setIsPlaying(true);
             setPendingPromotion(null);
             const ctx = initAudio();
@@ -968,8 +1059,21 @@
             setIsPlaying(false);
           };
 
+          const checkGameOver = () => {
+              if (game.isGameOver()) {
+                  setTimerActive(false);
+                  if (game.isCheckmate()) {
+                      setGameOverReason(`¡Jaque Mate! Ganan las ${game.turn() === 'w' ? 'Negras' : 'Blancas'}.`);
+                  } else if (game.isDraw()) {
+                      setGameOverReason('¡Tablas! (Empate)');
+                  } else {
+                      setGameOverReason('Fin del juego.');
+                  }
+              }
+          };
+
           const handleSquareClick = (file, rank) => {
-            if (isPlaying || isStockfishThinking || pendingPromotion) return;
+            if (isPlaying || isStockfishThinking || pendingPromotion || gameOverReason) return;
             const squareId = `${file}${rank}`;
             
             if (game && selectedSquare) {
@@ -1032,9 +1136,19 @@
             }
             setTimeout(() => setCasillaActiva(null), duracion * 2 * 1000);
 
-            // Activar Stockfish automáticamente al completar una jugada
-            if (moveMade && stockfishLevel > 0 && !game.isGameOver()) {
-                setTimeout(() => playStockfishTurn(stockfishLevel), 500);
+            if (moveMade) {
+                if (isPvPMode && timeControl) {
+                    setTimerActive(true);
+                    if (lastMove.color === 'w') setWhiteTime(prev => prev + timeControl.inc);
+                    else setBlackTime(prev => prev + timeControl.inc);
+                }
+                
+                checkGameOver();
+
+                // Activar Stockfish automáticamente al completar una jugada si no es PvP
+                if (!isPvPMode && stockfishLevel > 0 && !game.isGameOver()) {
+                    setTimeout(() => playStockfishTurn(stockfishLevel), 500);
+                }
             }
           };
 
@@ -1071,7 +1185,15 @@
                 }
                 setTimeout(() => setCasillaActiva(null), duracion * 2 * 1000);
 
-                if (stockfishLevel > 0 && !game.isGameOver()) {
+                if (isPvPMode && timeControl) {
+                    setTimerActive(true);
+                    if (move.color === 'w') setWhiteTime(prev => prev + timeControl.inc);
+                    else setBlackTime(prev => prev + timeControl.inc);
+                }
+
+                checkGameOver();
+
+                if (!isPvPMode && stockfishLevel > 0 && !game.isGameOver()) {
                     setTimeout(() => playStockfishTurn(stockfishLevel), 500);
                 }
               }
@@ -1088,6 +1210,7 @@
             setShowCerradas(false);
             setShowSemicerradas(false);
             setPendingPromotion(null);
+            setIsPvPMode(false);
             if (quizState.active) setQuizState({ ...quizState, active: false });
             if (game) {
               if (engineRef.current && isStockfishThinking) {
@@ -1105,6 +1228,7 @@
             setShowSemiabiertas(false);
             setShowCerradas(false);
             setShowSemicerradas(false);
+            setShowPvPMenu(false);
             menuSetter(!currentVal);
           };
 
@@ -1182,15 +1306,15 @@
                   </div>
 
                   {/* Controles Principales */}
-                  <div className="flex items-center justify-center gap-2 w-full max-w-[600px]">
-                    {/* Girar Tablero (Movido a la izquierda) */}
+                  <div className="flex items-center justify-center gap-2 w-full max-w-[600px] flex-wrap">
+                    {/* Girar Tablero */}
                     <button onClick={toggleOrientation} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md" title="Girar tablero">
                       <ArrowUpDown size={18} className="text-emerald-400" />
                     </button>
 
                     {/* Stockfish Bot Menu */}
                     <div className="relative menu-container">
-                      <button onClick={() => setShowStockfishMenu(!showStockfishMenu)} disabled={isPlaying || isStockfishThinking} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${stockfishLevel > 0 ? 'bg-orange-600 hover:bg-orange-500 border-orange-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title="Jugar contra la IA">
+                      <button onClick={() => setShowStockfishMenu(!showStockfishMenu)} disabled={isPlaying || isStockfishThinking || isPvPMode} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${stockfishLevel > 0 ? 'bg-orange-600 hover:bg-orange-500 border-orange-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title="Jugar contra la IA">
                         <Bot size={18} className={stockfishLevel > 0 ? "text-white" : "text-orange-400"} />
                       </button>
                       {showStockfishMenu && (
@@ -1212,11 +1336,11 @@
 
                     {/* Botón Modo Examen (Quiz) */}
                     <div className="relative menu-container">
-                      <button onClick={() => setShowQuizMenu(!showQuizMenu)} disabled={isPlaying || isStockfishThinking} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${quizState.active ? 'bg-violet-600 border-violet-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title="Modo Examen">
+                      <button onClick={() => setShowQuizMenu(!showQuizMenu)} disabled={isPlaying || isStockfishThinking || isPvPMode} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${quizState.active ? 'bg-violet-600 border-violet-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title="Modo Examen">
                         <GraduationCap size={18} className={quizState.active ? "text-white" : "text-violet-400"} />
                       </button>
                       {showQuizMenu && (
-                        <div className="absolute top-12 right-0 md:left-auto bg-slate-900 border-2 border-violet-500 rounded-xl p-2 w-56 shadow-2xl z-50 flex flex-col gap-1">
+                        <div className="absolute top-12 left-0 md:left-auto md:right-auto bg-slate-900 border-2 border-violet-500 rounded-xl p-2 w-56 shadow-2xl z-50 flex flex-col gap-1">
                           <p className="text-sm text-violet-400 uppercase font-bold px-2 py-1 border-b border-slate-800">Modo Examen</p>
                           <button onClick={() => startQuiz('2')} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-violet-900/40 text-slate-200">2 al azar</button>
                           <button onClick={() => startQuiz('4')} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-violet-900/40 text-slate-200">4 al azar</button>
@@ -1229,27 +1353,56 @@
                       )}
                     </div>
 
+                    {/* Botón Modo 2 Jugadores (PvP) */}
+                    <div className="relative menu-container">
+                      <button onClick={() => {
+                          if (isPvPMode) {
+                              setIsPvPMode(false);
+                              setTimerActive(false);
+                              setShowPvPMenu(false);
+                          } else {
+                              setShowPvPMenu(!showPvPMenu);
+                          }
+                      }} disabled={isPlaying || isStockfishThinking} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${isPvPMode ? 'bg-sky-600 border-sky-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title="Modo 2 Jugadores">
+                        <Users size={18} className={isPvPMode ? "text-white" : "text-sky-400"} />
+                      </button>
+                      {showPvPMenu && (
+                        <div className="absolute top-12 left-0 md:left-auto bg-slate-900 border-2 border-sky-500 rounded-xl p-2 w-48 shadow-2xl z-50 flex flex-col gap-1">
+                          <p className="text-sm text-sky-400 uppercase font-bold px-2 py-1 border-b border-slate-800">Modo 2 Jugadores</p>
+                          <button onClick={() => startPvPMatch(null, null)} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-sky-900/40 text-slate-200">Sin tiempo</button>
+                          <div className="border-t border-slate-800 my-1"></div>
+                          <button onClick={() => startPvPMatch(1, 0)} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-sky-900/40 text-slate-200">1 + 0 (Bala)</button>
+                          <button onClick={() => startPvPMatch(1, 1)} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-sky-900/40 text-slate-200">1 + 1 (Bala)</button>
+                          <button onClick={() => startPvPMatch(3, 0)} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-sky-900/40 text-slate-200">3 + 0 (Blitz)</button>
+                          <button onClick={() => startPvPMatch(3, 2)} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-sky-900/40 text-slate-200">3 + 2 (Blitz)</button>
+                          <button onClick={() => startPvPMatch(5, 0)} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-sky-900/40 text-slate-200">5 + 0 (Blitz)</button>
+                          <button onClick={() => startPvPMatch(5, 3)} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-sky-900/40 text-slate-200">5 + 3 (Blitz)</button>
+                          <button onClick={() => startPvPMatch(10, 0)} className="text-left px-4 py-2 text-sm rounded-lg hover:bg-sky-900/40 text-slate-200">10 + 0 (Rápido)</button>
+                        </div>
+                      )}
+                    </div>
+
                     <button onClick={resetBoard} disabled={isPlaying || isStockfishThinking} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white disabled:text-slate-500 shadow-md" title="Reiniciar tablero">
                       <RefreshCw size={18} />
                     </button>
 
-                    <div className="flex items-center flex-1 h-10 rounded-xl overflow-hidden border-2 border-slate-600 shadow-lg bg-slate-700 max-w-[360px]">
+                    <div className={`flex items-center flex-1 h-10 rounded-xl overflow-hidden border-2 border-slate-600 shadow-lg max-w-[360px] ${isPvPMode ? 'opacity-50 pointer-events-none bg-slate-800' : 'bg-slate-700'}`}>
                       <button onClick={undoMove} disabled={isPlaying || isStockfishThinking} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-r border-slate-600 text-white disabled:text-slate-500" title="Deshacer jugada">
                         <Undo2 size={18} />
                       </button>
-                      <button onClick={(e) => reproducirApertura(e, null, false)} disabled={isPlaying || isStockfishThinking} className="flex-[2] h-full flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-tighter disabled:bg-slate-600 disabled:text-slate-400 px-1">
+                      <button onClick={(e) => reproducirApertura(e, null, false)} disabled={isPlaying || isStockfishThinking || isPvPMode} className="flex-[2] h-full flex items-center justify-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-tighter disabled:bg-slate-600 disabled:text-slate-400 px-1">
                         <Play size={16} className={isPlaying ? "text-slate-400 animate-pulse" : "text-yellow-400"} /> 
                         <span className="hidden sm:inline">{isPlaying ? 'Tocando' : 'Reproducir'}</span>
                       </button>
-                      <button onClick={stepForward} disabled={isPlaying || isStockfishThinking} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500" title="Avanzar 1 jugada">
+                      <button onClick={stepForward} disabled={isPlaying || isStockfishThinking || isPvPMode} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500" title="Avanzar 1 jugada">
                         <StepForward size={18} />
                       </button>
-                      <button onClick={stepForwardTwo} disabled={isPlaying || isStockfishThinking} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500" title="Avanzar 2 jugadas">
+                      <button onClick={stepForwardTwo} disabled={isPlaying || isStockfishThinking || isPvPMode} className="flex-1 h-full flex items-center justify-center hover:bg-slate-600 border-l border-slate-600 text-white disabled:text-slate-500" title="Avanzar 2 jugadas">
                         <FastForward size={18} />
                       </button>
                     </div>
 
-                    {/* Silencio / Modos de Audio (Movido a la derecha) */}
+                    {/* Silencio / Modos de Audio */}
                     <button onClick={() => setAudioMode(prev => (prev + 1) % 4)} disabled={isPlaying} className={`flex-shrink-0 w-10 h-10 flex items-center justify-center border-2 rounded-xl shadow-md transition-colors ${audioMode === 3 ? 'bg-rose-600 hover:bg-rose-500 border-rose-500 text-white' : 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-white'} disabled:opacity-50`} title={['Sonido: Básico (Llegada)', 'Sonido: Completo (Partida/Llegada)', 'Sonido: Piezas (Neutro)', 'Sonido: Silenciado'][audioMode]}>
                       {audioMode === 0 && <Volume2 size={18} className="text-white" />}
                       {audioMode === 1 && <Music size={18} className="text-emerald-400" />}
@@ -1257,7 +1410,7 @@
                       {audioMode === 3 && <VolumeX size={18} className="text-white" />}
                     </button>
 
-                    {/* Cambiar Color Tablero (Movido a la derecha) */}
+                    {/* Cambiar Color Tablero */}
                     <button onClick={() => setThemeIndex((prev) => (prev + 1) % BOARD_THEMES.length)} className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-slate-700 hover:bg-slate-600 border-2 border-slate-600 rounded-xl text-white shadow-md" title="Cambiar color del tablero">
                       <Palette size={18} className="text-sky-400" />
                     </button>
@@ -1317,9 +1470,14 @@
 
                             const piece = game ? game.get(squareId) : null;
                             const pieceImg = piece ? PIECES_WIKIPEDIA[piece.color][piece.type] : null;
+                            
+                            // Lógica para girar las piezas del jugador de arriba
+                            const isTopPiece = piece && ((!isFlipped && piece.color === 'b') || (isFlipped && piece.color === 'w'));
+                            const rotationClass = isPvPMode && isTopPiece ? 'rotate-180' : '';
+
                             return (
                               <button key={squareId} onClick={() => handleSquareClick(file, rank)} style={{ backgroundColor: currentBg }} className={`relative flex-1 aspect-square select-none transition-all duration-200 flex items-center justify-center ${isActiva ? 'ring-inset ring-2 ring-yellow-400 z-10 scale-[1.02] shadow-sm' : ''} ${selectedSquare === squareId ? 'ring-inset ring-2 ring-yellow-500' : ''}`}>
-                                {pieceImg && <img src={pieceImg} alt="" className="w-[85%] h-[85%] object-contain drop-shadow-md pointer-events-none" />}
+                                {pieceImg && <img src={pieceImg} alt="" className={`w-[85%] h-[85%] object-contain drop-shadow-md pointer-events-none transition-transform duration-300 ${rotationClass}`} />}
                                 {fileIndex === 0 && <span style={{ color: textColor }} className="absolute top-0.5 left-1 text-[10px] md:text-xs font-bold">{rank}</span>}
                                 {rankIndex === 7 && <span style={{ color: textColor }} className="absolute bottom-0.5 right-1 text-[10px] md:text-xs font-bold">{file}</span>}
                               </button>
@@ -1330,7 +1488,7 @@
                     </div>
 
                     {/* Panel Lateral */}
-                    <div className={`w-full ${isPanelBelow ? 'max-w-[850px] mx-auto' : 'md:w-64'} relative min-h-[300px] flex-shrink-0`}>
+                    <div className={`w-full ${isPanelBelow ? 'max-w-[850px] mx-auto' : 'md:w-64'} relative min-h-[300px] flex-shrink-0 flex flex-col`}>
                       <div className="absolute inset-0 bg-slate-900 border-2 border-slate-700 rounded-xl shadow-2xl flex flex-col items-center justify-start overflow-hidden">
                           
                          <div className="w-full bg-emerald-900/30 border-b border-emerald-500/20 py-2 px-2 text-center">
@@ -1339,7 +1497,35 @@
                            </p>
                          </div>
 
-                         {quizState.active ? (
+                         {isPvPMode ? (
+                           <div className="w-full flex flex-col p-4 flex-1 items-center justify-center gap-4">
+                               <h4 className="text-sm text-sky-400 uppercase font-black text-center border-b border-slate-700 pb-2 w-full">2 Jugadores</h4>
+                               {timeControl ? (
+                                   <div className="flex flex-col gap-6 w-full max-w-[200px]">
+                                       {/* Reloj del jugador de arriba */}
+                                       <div className={`p-4 rounded-xl text-center font-mono text-4xl font-bold border-[3px] transition-all shadow-lg ${game.turn() === (isFlipped ? 'w' : 'b') && timerActive ? 'bg-yellow-500/20 border-yellow-400 text-yellow-300 scale-105' : 'bg-slate-800 border-slate-600 text-slate-300 opacity-70'}`}>
+                                           {formatTime(isFlipped ? whiteTime : blackTime)}
+                                       </div>
+                                       {/* Reloj del jugador de abajo */}
+                                       <div className={`p-4 rounded-xl text-center font-mono text-4xl font-bold border-[3px] transition-all shadow-lg ${game.turn() === (isFlipped ? 'b' : 'w') && timerActive ? 'bg-yellow-500/20 border-yellow-400 text-yellow-300 scale-105' : 'bg-slate-800 border-slate-600 text-slate-300 opacity-70'}`}>
+                                           {formatTime(isFlipped ? blackTime : whiteTime)}
+                                       </div>
+                                   </div>
+                               ) : (
+                                   <div className="text-center text-slate-400 italic py-6">Partida libre sin tiempo.</div>
+                               )}
+                               
+                               {gameOverReason && (
+                                   <div className="mt-2 w-full bg-rose-900/50 border-2 border-rose-500 text-rose-300 p-3 rounded-lg text-center font-bold text-sm shadow-xl animate-pulse">
+                                       {gameOverReason}
+                                   </div>
+                               )}
+                               
+                               <button onClick={() => { setIsPvPMode(false); setTimerActive(false); }} className="mt-auto text-xs text-slate-500 hover:text-white underline py-2 w-full">
+                                   Salir del Modo PvP
+                               </button>
+                           </div>
+                         ) : quizState.active ? (
                            <div className="w-full flex flex-col items-center justify-start p-4 flex-1">
                                <h4 className="text-sm text-violet-400 uppercase font-black mb-4 text-center">¿Qué apertura es?</h4>
                                <div className="w-full flex flex-col gap-2">
